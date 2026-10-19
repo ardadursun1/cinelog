@@ -59,6 +59,14 @@ jobs:
       - name: Build ${{ matrix.target }} release
         run: flutter build ${{ matrix.target }} --release
 
+      - name: Rename Windows executable to CineLog.exe
+        if: matrix.target == 'windows'
+        shell: pwsh
+        run: |
+          if (Test-Path "build/windows/x64/runner/Release/movie_tracker.exe") {
+            Move-Item "build/windows/x64/runner/Release/movie_tracker.exe" "build/windows/x64/runner/Release/CineLog.exe" -Force
+          }
+
       - name: Prepare macOS app bundle
         if: matrix.target == 'macos'
         run: |
