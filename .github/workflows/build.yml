@@ -24,7 +24,7 @@ jobs:
           - os: macos-latest
             target: macos
             artifact_name: cinelog-macos
-            artifact_path: build/macos/Build/Products/Release/movie_tracker.app
+            artifact_path: build/macos/Build/Products/Release/CineLog-macOS
           - os: ubuntu-latest
             target: linux
             artifact_name: cinelog-linux
@@ -58,6 +58,16 @@ jobs:
 
       - name: Build ${{ matrix.target }} release
         run: flutter build ${{ matrix.target }} --release
+
+      - name: Prepare macOS app bundle
+        if: matrix.target == 'macos'
+        run: |
+          mkdir -p build/macos/Build/Products/Release/CineLog-macOS
+          mv build/macos/Build/Products/Release/movie_tracker.app build/macos/Build/Products/Release/CineLog-macOS/CineLog.app
+          chmod +x build/macos/Build/Products/Release/CineLog-macOS/CineLog.app/Contents/MacOS/movie_tracker
+          codesign --force --deep --sign - build/macos/Build/Products/Release/CineLog-macOS/CineLog.app
+          ditto -c -k --sequesterRsrc --keepParent build/macos/Build/Products/Release/CineLog-macOS/CineLog.app build/macos/Build/Products/Release/CineLog-macOS/CineLog-macOS.app.zip
+          rm -rf build/macos/Build/Products/Release/CineLog-macOS/CineLog.app
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
