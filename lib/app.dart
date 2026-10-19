@@ -14,7 +14,7 @@ class MovieTrackerApp extends ConsumerWidget {
     final themeMode = ref.watch(themeModeProvider).value ?? ThemeMode.system;
 
     return MaterialApp.router(
-      title: 'Movie Tracker',
+      title: 'CineLog',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),

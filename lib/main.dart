@@ -12,7 +12,7 @@ Future<void> main() async {
     size: Size(1180, 760),
     minimumSize: Size(900, 600),
     center: true,
-    title: 'Movie Tracker',
+    title: 'CineLog',
   );
   // Do not await before runApp: waitUntilReadyToShow waits for the first frame.
   windowManager.waitUntilReadyToShow(windowOptions, () async {

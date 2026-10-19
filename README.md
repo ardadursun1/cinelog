@@ -1,4 +1,4 @@
-# Movie Tracker
+# CineLog
 
 Kişisel kullanım için geliştirilmiş, çevrimdışı yerel veritabanı (**SQLite / Drift**) kullanan modern masaüstü film ve dizi takip uygulaması (**Flutter**).  
 A modern, privacy-friendly desktop movie & TV show tracker built with **Flutter** and local **SQLite (Drift)** storage.

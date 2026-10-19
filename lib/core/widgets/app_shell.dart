@@ -45,6 +45,28 @@ class AppShell extends ConsumerWidget {
             body: Row(
               children: [
                 NavigationRail(
+                  leading: Padding(
+                    padding: const EdgeInsets.only(top: 10, bottom: 14),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.local_movies_rounded,
+                          size: 26,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'CineLog',
+                          style:
+                              Theme.of(context).textTheme.labelMedium?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.4,
+                                  ),
+                        ),
+                      ],
+                    ),
+                  ),
                   selectedIndex: navigationShell.currentIndex,
                   onDestinationSelected: (index) => navigationShell.goBranch(
                     index,
