@@ -18,6 +18,9 @@ class LibraryDao {
 SELECT li.*,
   (SELECT group_concat(g.genre_id || char(31) || g.genre_name, char(30))
      FROM item_genres g WHERE g.item_id = li.id) AS genre_list,
+  (SELECT group_concat(s.season_number || char(31) || s.episode_count, char(30))
+     FROM (SELECT season_number, episode_count FROM tv_seasons
+           WHERE item_id = li.id ORDER BY season_number ASC) s) AS season_list,
   (SELECT COUNT(*) FROM watched_episodes w
      WHERE w.item_id = li.id) AS watched_episode_count,
   (SELECT COALESCE(SUM(s.episode_count), 0) FROM tv_seasons s
@@ -45,11 +48,28 @@ FROM library_items li
   LibraryEntry _mapEntry(QueryRow row) => LibraryEntry(
         item: _db.libraryItems.map(row.data),
         genres: _parseGenres(row.readNullable<String>('genre_list')),
+        seasonCounts: _parseSeasons(row.readNullable<String>('season_list')),
         watchedEpisodeCount: row.read<int>('watched_episode_count'),
         totalEpisodeCount: row.read<int>('total_episode_count'),
         lastSeason: row.readNullable<int>('last_season'),
         lastEpisode: row.readNullable<int>('last_episode'),
       );
+
+  static List<(int season, int episodeCount)> _parseSeasons(String? raw) {
+    if (raw == null || raw.isEmpty) return const [];
+    final seasons = <(int, int)>[];
+    for (final part in raw.split(_rowSep)) {
+      final idx = part.indexOf(_fieldSep);
+      if (idx <= 0) continue;
+      final s = int.tryParse(part.substring(0, idx));
+      final c = int.tryParse(part.substring(idx + 1));
+      if (s != null && c != null && s > 0 && c > 0) {
+        seasons.add((s, c));
+      }
+    }
+    seasons.sort((a, b) => a.$1.compareTo(b.$1));
+    return seasons;
+  }
 
   static List<Genre> _parseGenres(String? raw) {
     if (raw == null || raw.isEmpty) return const [];

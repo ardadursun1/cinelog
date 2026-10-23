@@ -16,6 +16,8 @@ class PosterCard extends ConsumerStatefulWidget {
     this.status,
     this.userRating,
     this.progressLabel,
+    this.nextEpisodeLabel,
+    this.onMarkNextEpisode,
   });
 
   final TitleSummary summary;
@@ -24,6 +26,8 @@ class PosterCard extends ConsumerStatefulWidget {
   final WatchStatus? status;
   final int? userRating;
   final String? progressLabel;
+  final String? nextEpisodeLabel;
+  final VoidCallback? onMarkNextEpisode;
 
   @override
   ConsumerState<PosterCard> createState() => _PosterCardState();
@@ -185,19 +189,78 @@ class _PosterCardState extends ConsumerState<PosterCard> {
                             ],
                           ),
                         ),
-                      if (widget.progressLabel != null)
+                      if (widget.progressLabel != null ||
+                          (widget.nextEpisodeLabel != null &&
+                              widget.onMarkNextEpisode != null))
                         Positioned(
                           bottom: 8,
                           left: 8,
                           right: 8,
-                          child: Align(
-                            alignment: Alignment.bottomLeft,
-                            child: _Badge(
-                              icon: Icons.tv,
-                              label: widget.progressLabel!,
-                              background: Colors.black87,
-                              foreground: Colors.white,
-                            ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (widget.progressLabel != null)
+                                _Badge(
+                                  icon: Icons.tv,
+                                  label: widget.progressLabel!,
+                                  background: Colors.black87,
+                                  foreground: Colors.white,
+                                ),
+                              if (widget.progressLabel != null &&
+                                  widget.nextEpisodeLabel != null &&
+                                  widget.onMarkNextEpisode != null)
+                                const SizedBox(height: 5),
+                              if (widget.nextEpisodeLabel != null &&
+                                  widget.onMarkNextEpisode != null)
+                                Tooltip(
+                                  message: lang.pick(
+                                    'Sıradaki bölümü izledim olarak işaretle',
+                                    'Mark next episode as watched',
+                                  ),
+                                  child: Material(
+                                    color: Colors.green.shade700.withValues(
+                                      alpha: 0.94,
+                                    ),
+                                    borderRadius: BorderRadius.circular(8),
+                                    clipBehavior: Clip.antiAlias,
+                                    elevation: 2,
+                                    child: InkWell(
+                                      onTap: widget.onMarkNextEpisode,
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 9,
+                                          vertical: 5,
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(
+                                              Icons.play_arrow_rounded,
+                                              size: 15,
+                                              color: Colors.white,
+                                            ),
+                                            const SizedBox(width: 3),
+                                            Flexible(
+                                              child: Text(
+                                                widget.nextEpisodeLabel!,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 11.5,
+                                                  fontWeight: FontWeight.w700,
+                                                  letterSpacing: 0.2,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                     ],

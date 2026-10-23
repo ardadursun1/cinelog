@@ -8,6 +8,7 @@ import '../../../core/widgets/poster_card.dart';
 import '../../../core/widgets/responsive_poster_grid.dart';
 import '../../title_detail/presentation/random_pick_dialog.dart';
 import '../../title_detail/presentation/title_detail_dialog.dart';
+import '../domain/library_entry.dart';
 import '../domain/library_filter.dart';
 import '../domain/watch_status.dart';
 import 'library_providers.dart';
@@ -26,6 +27,41 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _markNextEpisode(
+    LibraryEntry entry,
+    (int season, int episode) nextEp,
+  ) async {
+    final lang = ref.read(currentLanguageProvider);
+    final episodeDao = ref.read(episodeDaoProvider);
+    if (entry.totalEpisodeCount == 0) {
+      await ref
+          .read(libraryServiceProvider)
+          .refreshSeasons(entry.item.id, entry.item.tmdbId);
+    }
+    await episodeDao.setEpisode(entry.item.id, nextEp, watched: true);
+    if (!mounted) return;
+    final code = formatEpisodeCode(nextEp.$1, nextEp.$2);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 3),
+          content: Text(
+            lang.pick(
+              '"${entry.item.title}" · $code izlendi olarak işaretlendi.',
+              '"${entry.item.title}" · $code marked as watched.',
+            ),
+          ),
+          action: SnackBarAction(
+            label: lang.pick('Geri Al', 'Undo'),
+            onPressed: () {
+              episodeDao.setEpisode(entry.item.id, nextEp, watched: false);
+            },
+          ),
+        ),
+      );
   }
 
   @override
@@ -244,11 +280,16 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 itemBuilder: (context, index) {
                   final entry = entries[index];
                   final summary = entry.toSummary();
+                  final nextEp = entry.nextEpisode;
                   return PosterCard(
                     summary: summary,
                     status: entry.item.status,
                     userRating: entry.item.userRating,
                     progressLabel: entry.progressLabel,
+                    nextEpisodeLabel: entry.nextEpisodeLabel,
+                    onMarkNextEpisode: nextEp == null
+                        ? null
+                        : () => _markNextEpisode(entry, nextEp),
                     onQuickStatus: (targetStatus) {
                       ref
                           .read(libraryDaoProvider)

@@ -162,10 +162,18 @@ void main() {
       var item = await libraryDao.findById(id);
       expect(item?.status, WatchStatus.watching);
 
+      var entry = (await libraryDao.watchEntries().first).single;
+      expect(entry.progressLabel, 'S01E01 · 1/3');
+      expect(entry.nextEpisode, (1, 2));
+      expect(entry.nextEpisodeLabel, 'S01E02 → ✓');
+
       await episodeDao.markUpTo(id, (1, 3));
       item = await libraryDao.findById(id);
       expect(item?.status, WatchStatus.watched);
       expect(item?.watchedAt, isNotNull);
+
+      entry = (await libraryDao.watchEntries().first).single;
+      expect(entry.nextEpisode, isNull);
 
       final stats = await statsDao.watchStats().first;
       expect(stats.count(WatchStatus.watched, MediaType.tv), 1);
