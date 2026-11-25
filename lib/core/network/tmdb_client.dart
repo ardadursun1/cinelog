@@ -140,6 +140,38 @@ class TmdbClient {
     );
   }
 
+  Future<TmdbSearchPage> searchMovies(
+    String query, {
+    int? year,
+    int page = 1,
+    CancelToken? cancelToken,
+  }) async {
+    final trimmed = query.trim();
+    final safeQuery = trimmed.length > maxQueryLength
+        ? trimmed.substring(0, maxQueryLength)
+        : trimmed;
+    final json = await _get(
+      'search/movie',
+      query: {
+        'query': safeQuery,
+        'page': page,
+        'include_adult': false,
+        'year': ?year,
+      },
+      cancelToken: cancelToken,
+    );
+    return TmdbSearchPage.fromJson(json, defaultType: MediaType.movie);
+  }
+
+  Future<TmdbSearchItem?> fetchMovieById(
+    int tmdbId, {
+    CancelToken? cancelToken,
+  }) async {
+    if (tmdbId <= 0) return null;
+    final json = await _get('movie/$tmdbId', cancelToken: cancelToken);
+    return TmdbSearchItem.tryParse(json, defaultType: MediaType.movie);
+  }
+
   static const Set<String> _nicheCategoryKeys = {
     'documentary',
     'western',

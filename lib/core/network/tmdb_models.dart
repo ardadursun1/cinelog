@@ -98,6 +98,19 @@ class TmdbSearchItem {
     if (title.isEmpty) return null;
 
     final rawGenres = json['genre_ids'];
+    final rawDetailGenres = json['genres'];
+    final List<int> parsedGenreIds;
+    if (rawGenres is List) {
+      parsedGenreIds = rawGenres.whereType<int>().where((g) => g > 0).toList();
+    } else if (rawDetailGenres is List) {
+      parsedGenreIds = [
+        for (final g in rawDetailGenres)
+          if (g is Map<String, dynamic> && g['id'] is int && (g['id'] as int) > 0)
+            g['id'] as int,
+      ];
+    } else {
+      parsedGenreIds = const [];
+    }
     final voteCount = _positiveInt(json['vote_count']);
     return TmdbSearchItem(
       id: id,
@@ -116,9 +129,7 @@ class TmdbSearchItem {
         mediaType: type,
       ),
       voteCount: voteCount,
-      genreIds: rawGenres is List
-          ? rawGenres.whereType<int>().where((g) => g > 0).toList()
-          : const [],
+      genreIds: parsedGenreIds,
       originalLanguage: _clip(json['original_language'], 16),
     );
   }
