@@ -1,17 +1,50 @@
-name: Build Desktop Releases
+name: CI & Desktop Releases
 
 on:
   push:
+    branches:
+      - main
+      - master
     tags:
       - 'v*'
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  verify:
+    name: Analyze & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install SQLite library for tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsqlite3-dev
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install pub dependencies
+        run: flutter pub get
+
+      - name: Run static analysis
+        run: dart analyze lib test
+
+      - name: Run unit & integration tests
+        run: flutter test
+
   build:
     name: Build (${{ matrix.target }})
+    needs: verify
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

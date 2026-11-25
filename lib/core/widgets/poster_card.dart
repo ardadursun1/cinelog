@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/library/domain/watch_status.dart';
+import '../../features/library/presentation/library_providers.dart';
 import '../../features/library/presentation/watch_status_style.dart';
 import '../models/title_summary.dart';
-import '../network/tmdb_models.dart';
 import '../settings/app_settings_providers.dart';
+import 'cached_tmdb_image.dart';
 
 class PosterCard extends ConsumerStatefulWidget {
   const PosterCard({
@@ -35,6 +36,17 @@ class PosterCard extends ConsumerStatefulWidget {
 
 class _PosterCardState extends ConsumerState<PosterCard> {
   bool _hovered = false;
+  bool _autoAddedByFavorite = false;
+
+  @override
+  void didUpdateWidget(covariant PosterCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.summary.key != widget.summary.key) {
+      _autoAddedByFavorite = false;
+    } else if (widget.status != null && widget.status != WatchStatus.planned) {
+      _autoAddedByFavorite = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -67,7 +79,13 @@ class _PosterCardState extends ConsumerState<PosterCard> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      _PosterImage(posterPath: summary.posterPath),
+                      CachedTmdbImage(
+                        imagePath: summary.posterPath,
+                        size: 'w342',
+                        cacheWidth: 360,
+                        placeholderIcon: Icons.movie_outlined,
+                        placeholderIconSize: 48,
+                      ),
                       if (_hovered && summary.overview.isNotEmpty)
                         Positioned.fill(
                           child: AnimatedOpacity(
@@ -150,8 +168,10 @@ class _PosterCardState extends ConsumerState<PosterCard> {
                                       ),
                                 active: status == WatchStatus.planned,
                                 activeColor: scheme.tertiary,
-                                onPressed: () =>
-                                    onQuickStatus(WatchStatus.planned),
+                                onPressed: () {
+                                  _autoAddedByFavorite = false;
+                                  onQuickStatus(WatchStatus.planned);
+                                },
                               ),
                               const SizedBox(height: 6),
                               _QuickActionButton(
@@ -167,8 +187,10 @@ class _PosterCardState extends ConsumerState<PosterCard> {
                                       ),
                                 active: status == WatchStatus.watched,
                                 activeColor: Colors.green.shade600,
-                                onPressed: () =>
-                                    onQuickStatus(WatchStatus.watched),
+                                onPressed: () {
+                                  _autoAddedByFavorite = false;
+                                  onQuickStatus(WatchStatus.watched);
+                                },
                               ),
                               const SizedBox(height: 6),
                               _QuickActionButton(
@@ -187,12 +209,23 @@ class _PosterCardState extends ConsumerState<PosterCard> {
                                 active: isFavorite,
                                 activeColor: Colors.pinkAccent.shade400,
                                 onPressed: () async {
+                                  final wasNullStatus = status == null;
+                                  final shouldUndoAutoAdd =
+                                      _autoAddedByFavorite &&
+                                          status == WatchStatus.planned &&
+                                          widget.userRating == null;
                                   final added = await toggleFavoriteTitle(
                                     ref,
                                     summary.key,
                                   );
-                                  if (added && status == null) {
+                                  if (added && wasNullStatus) {
+                                    _autoAddedByFavorite = true;
                                     onQuickStatus(WatchStatus.planned);
+                                  } else if (!added && shouldUndoAutoAdd) {
+                                    _autoAddedByFavorite = false;
+                                    await ref
+                                        .read(libraryServiceProvider)
+                                        .removeIfUnmodifiedPlanned(summary.key);
                                   }
                                 },
                               ),
@@ -346,53 +379,6 @@ class _QuickActionButton extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _PosterImage extends StatelessWidget {
-  const _PosterImage({required this.posterPath});
-
-  final String? posterPath;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final path = posterPath;
-    if (path == null) {
-      return ColoredBox(
-        color: scheme.surfaceContainerHighest,
-        child: Icon(
-          Icons.movie_outlined,
-          size: 48,
-          color: scheme.onSurfaceVariant,
-        ),
-      );
-    }
-    return Image.network(
-      tmdbPosterUrl(path),
-      fit: BoxFit.cover,
-      errorBuilder: (_, _, _) => ColoredBox(
-        color: scheme.surfaceContainerHighest,
-        child: Icon(
-          Icons.broken_image_outlined,
-          size: 40,
-          color: scheme.onSurfaceVariant,
-        ),
-      ),
-      loadingBuilder: (context, child, progress) {
-        if (progress == null) return child;
-        return ColoredBox(
-          color: scheme.surfaceContainerHighest,
-          child: const Center(
-            child: SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          ),
-        );
-      },
     );
   }
 }

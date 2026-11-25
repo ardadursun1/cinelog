@@ -30,13 +30,11 @@ class ContentCategory {
   /// category is excluded.
   bool matchesExcluded(TmdbSearchItem item) {
     final ids = genreIdsFor(item.mediaType);
-    if (ids.any(item.genreIds.contains)) return true;
-    if (key == 'anime' &&
-        item.originalLanguage == 'ja' &&
-        item.genreIds.contains(16)) {
-      return true;
+    if (includeOriginalLanguage != null) {
+      if (item.originalLanguage != includeOriginalLanguage) return false;
+      return ids.isEmpty || ids.any(item.genreIds.contains);
     }
-    return false;
+    return ids.any(item.genreIds.contains);
   }
 }
 
@@ -50,6 +48,14 @@ const List<ContentCategory> kContentCategories = [
     tvGenreIds: [16],
     includeOriginalLanguage: 'ja',
     tmdbKeywordId: 210024,
+  ),
+  ContentCategory(
+    key: 'kdrama',
+    label: 'Kore Yapımları',
+    labelEn: 'Korean',
+    movieGenreIds: [18, 10749, 53, 80, 35],
+    tvGenreIds: [18, 10759, 9648, 35, 10765],
+    includeOriginalLanguage: 'ko',
   ),
   ContentCategory(
     key: 'animation',

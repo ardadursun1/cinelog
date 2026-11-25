@@ -6,6 +6,7 @@ import '../../../core/network/tmdb_client.dart';
 import '../../../core/network/tmdb_models.dart';
 import '../../../core/network/tmdb_providers.dart';
 import '../../../core/settings/app_settings_providers.dart';
+import '../../../core/widgets/cached_tmdb_image.dart';
 import '../../../core/widgets/poster_card.dart';
 import '../../../core/widgets/responsive_poster_grid.dart';
 import '../../library/presentation/library_providers.dart';
@@ -86,22 +87,13 @@ class _PersonCreditsDialogState extends ConsumerState<PersonCreditsDialog> {
                     child: SizedBox(
                       width: 76,
                       height: 96,
-                      child: profilePath != null
-                          ? Image.network(
-                              tmdbPosterUrl(profilePath, size: 'w185'),
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) => ColoredBox(
-                                color: scheme.surfaceContainerHighest,
-                                child: const Icon(
-                                  Icons.person_outline,
-                                  size: 36,
-                                ),
-                              ),
-                            )
-                          : ColoredBox(
-                              color: scheme.surfaceContainerHighest,
-                              child: const Icon(Icons.person_outline, size: 36),
-                            ),
+                      child: CachedTmdbImage(
+                        imagePath: profilePath,
+                        size: 'w185',
+                        cacheWidth: 160,
+                        placeholderIcon: Icons.person_outline,
+                        placeholderIconSize: 36,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -231,7 +223,10 @@ class _PersonCreditsDialogState extends ConsumerState<PersonCreditsDialog> {
                           summary,
                           targetStatus,
                         ),
-                        onTap: () => showTitleDetailDialog(context, summary),
+                        onTap: () {
+                          Navigator.of(context).pop();
+                          showTitleDetailDialog(context, summary);
+                        },
                       );
                     },
                   );

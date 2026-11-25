@@ -1,12 +1,14 @@
 import 'dart:convert';
 
 import '../../../core/database/tables.dart';
+import '../../../core/l10n/app_language.dart';
 import '../../../core/models/media_type.dart';
 import '../../../core/models/title_summary.dart';
 import '../../../core/network/tmdb_models.dart';
 import '../../library/domain/watch_status.dart';
 
 const String kBackupAppId = 'movie_tracker';
+const String _kAltBackupAppId = 'cinelog';
 const int kBackupSchemaVersion = 1;
 const int kMaxBackupBytes = 20 * 1024 * 1024;
 const int _maxItems = 100000;
@@ -29,6 +31,7 @@ class BackupItem {
     this.posterPath,
     this.overview = '',
     this.releaseYear,
+    this.runtimeMinutes,
     required this.status,
     this.userRating,
     this.note,
@@ -48,6 +51,7 @@ class BackupItem {
   final String? posterPath;
   final String overview;
   final int? releaseYear;
+  final int? runtimeMinutes;
   final WatchStatus status;
   final int? userRating;
   final String? note;
@@ -68,9 +72,13 @@ class BackupDecodeResult {
 }
 
 class BackupFormatException implements Exception {
-  const BackupFormatException(this.message);
+  const BackupFormatException(this.message, [this.messageEn]);
 
   final String message;
+  final String? messageEn;
+
+  String messageFor(AppLanguage lang) =>
+      lang.isEn ? (messageEn ?? message) : message;
 
   @override
   String toString() => 'BackupFormatException: $message';
@@ -96,6 +104,7 @@ abstract final class BackupCodec {
         'posterPath': i.posterPath,
         'overview': i.overview,
         'releaseYear': i.releaseYear,
+        if (i.runtimeMinutes != null) 'runtimeMinutes': i.runtimeMinutes,
         'status': i.status.name,
         'userRating': i.userRating,
         'note': i.note,
@@ -127,28 +136,43 @@ abstract final class BackupCodec {
     try {
       root = jsonDecode(source);
     } on FormatException {
-      throw const BackupFormatException('Dosya geçerli bir JSON değil.');
-    }
-    if (root is! Map<String, dynamic> || root['app'] != kBackupAppId) {
       throw const BackupFormatException(
-        'Bu dosya bir Movie Tracker yedeği değil.',
+        'Dosya geçerli bir JSON değil.',
+        'File is not valid JSON.',
+      );
+    }
+    if (root is! Map<String, dynamic> ||
+        (root['app'] != kBackupAppId && root['app'] != _kAltBackupAppId)) {
+      throw const BackupFormatException(
+        'Bu dosya bir CineLog JSON yedeği değil.',
+        'This file is not a CineLog JSON backup.',
       );
     }
     final version = root['schemaVersion'];
     if (version is! int || version < 1) {
-      throw const BackupFormatException('Yedek sürümü okunamadı.');
+      throw const BackupFormatException(
+        'Yedek sürümü okunamadı.',
+        'Backup schema version could not be read.',
+      );
     }
     if (version > kBackupSchemaVersion) {
       throw const BackupFormatException(
         'Yedek, uygulamanın daha yeni bir sürümüyle oluşturulmuş.',
+        'Backup was created by a newer version of the app.',
       );
     }
     final rawItems = root['items'];
     if (rawItems is! List) {
-      throw const BackupFormatException('Yedekte "items" listesi yok.');
+      throw const BackupFormatException(
+        'Yedekte "items" listesi yok.',
+        'Backup is missing the "items" list.',
+      );
     }
     if (rawItems.length > _maxItems) {
-      throw const BackupFormatException('Yedekte çok fazla kayıt var.');
+      throw const BackupFormatException(
+        'Yedekte çok fazla kayıt var.',
+        'Backup contains too many entries.',
+      );
     }
 
     final items = <BackupItem>[];
@@ -188,6 +212,11 @@ abstract final class BackupCodec {
     if (releaseYear != null && !isValidYear(releaseYear)) {
       throw const FormatException('geçersiz releaseYear');
     }
+    final rawRuntime = _optionalInt(raw, 'runtimeMinutes');
+    final runtimeMinutes =
+        (rawRuntime != null && rawRuntime > 0 && rawRuntime <= 1500)
+            ? rawRuntime
+            : null;
     final rating = _optionalInt(raw, 'userRating');
     if (rating != null && (rating < 1 || rating > 10)) {
       throw const FormatException('userRating 1-10 arasında olmalı');
@@ -205,6 +234,7 @@ abstract final class BackupCodec {
       posterPath: posterPath,
       overview: _optionalString(raw, 'overview', max: 10000) ?? '',
       releaseYear: releaseYear,
+      runtimeMinutes: runtimeMinutes,
       status: status,
       userRating: rating,
       note: (note == null || note.trim().isEmpty) ? null : note.trim(),

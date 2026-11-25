@@ -99,7 +99,7 @@ class StatsScreen extends ConsumerWidget {
                 'No titles marked as "Watched" yet.',
               ),
               rows: [
-                for (final g in stats.genres) (g.label, g.count),
+                for (final g in stats.genresFor(lang)) (g.label, g.count),
               ],
             ),
             const SizedBox(height: 28),

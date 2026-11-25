@@ -95,6 +95,17 @@ class $LibraryItemsTable extends LibraryItems
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _runtimeMinutesMeta = const VerificationMeta(
+    'runtimeMinutes',
+  );
+  @override
+  late final GeneratedColumn<int> runtimeMinutes = GeneratedColumn<int>(
+    'runtime_minutes',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   late final GeneratedColumnWithTypeConverter<WatchStatus, String> status =
       GeneratedColumn<String>(
@@ -169,6 +180,7 @@ class $LibraryItemsTable extends LibraryItems
     posterPath,
     overview,
     releaseYear,
+    runtimeMinutes,
     status,
     userRating,
     note,
@@ -234,6 +246,15 @@ class $LibraryItemsTable extends LibraryItems
         releaseYear.isAcceptableOrUnknown(
           data['release_year']!,
           _releaseYearMeta,
+        ),
+      );
+    }
+    if (data.containsKey('runtime_minutes')) {
+      context.handle(
+        _runtimeMinutesMeta,
+        runtimeMinutes.isAcceptableOrUnknown(
+          data['runtime_minutes']!,
+          _runtimeMinutesMeta,
         ),
       );
     }
@@ -318,6 +339,10 @@ class $LibraryItemsTable extends LibraryItems
         DriftSqlType.int,
         data['${effectivePrefix}release_year'],
       ),
+      runtimeMinutes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}runtime_minutes'],
+      ),
       status: $LibraryItemsTable.$converterstatus.fromSql(
         attachedDatabase.typeMapping.read(
           DriftSqlType.string,
@@ -367,6 +392,7 @@ class LibraryItem extends DataClass implements Insertable<LibraryItem> {
   final String? posterPath;
   final String overview;
   final int? releaseYear;
+  final int? runtimeMinutes;
   final WatchStatus status;
   final int? userRating;
   final String? note;
@@ -382,6 +408,7 @@ class LibraryItem extends DataClass implements Insertable<LibraryItem> {
     this.posterPath,
     required this.overview,
     this.releaseYear,
+    this.runtimeMinutes,
     required this.status,
     this.userRating,
     this.note,
@@ -407,6 +434,9 @@ class LibraryItem extends DataClass implements Insertable<LibraryItem> {
     map['overview'] = Variable<String>(overview);
     if (!nullToAbsent || releaseYear != null) {
       map['release_year'] = Variable<int>(releaseYear);
+    }
+    if (!nullToAbsent || runtimeMinutes != null) {
+      map['runtime_minutes'] = Variable<int>(runtimeMinutes);
     }
     {
       map['status'] = Variable<String>(
@@ -441,6 +471,9 @@ class LibraryItem extends DataClass implements Insertable<LibraryItem> {
       releaseYear: releaseYear == null && nullToAbsent
           ? const Value.absent()
           : Value(releaseYear),
+      runtimeMinutes: runtimeMinutes == null && nullToAbsent
+          ? const Value.absent()
+          : Value(runtimeMinutes),
       status: Value(status),
       userRating: userRating == null && nullToAbsent
           ? const Value.absent()
@@ -470,6 +503,7 @@ class LibraryItem extends DataClass implements Insertable<LibraryItem> {
       posterPath: serializer.fromJson<String?>(json['posterPath']),
       overview: serializer.fromJson<String>(json['overview']),
       releaseYear: serializer.fromJson<int?>(json['releaseYear']),
+      runtimeMinutes: serializer.fromJson<int?>(json['runtimeMinutes']),
       status: $LibraryItemsTable.$converterstatus.fromJson(
         serializer.fromJson<String>(json['status']),
       ),
@@ -494,6 +528,7 @@ class LibraryItem extends DataClass implements Insertable<LibraryItem> {
       'posterPath': serializer.toJson<String?>(posterPath),
       'overview': serializer.toJson<String>(overview),
       'releaseYear': serializer.toJson<int?>(releaseYear),
+      'runtimeMinutes': serializer.toJson<int?>(runtimeMinutes),
       'status': serializer.toJson<String>(
         $LibraryItemsTable.$converterstatus.toJson(status),
       ),
@@ -514,6 +549,7 @@ class LibraryItem extends DataClass implements Insertable<LibraryItem> {
     Value<String?> posterPath = const Value.absent(),
     String? overview,
     Value<int?> releaseYear = const Value.absent(),
+    Value<int?> runtimeMinutes = const Value.absent(),
     WatchStatus? status,
     Value<int?> userRating = const Value.absent(),
     Value<String?> note = const Value.absent(),
@@ -529,6 +565,9 @@ class LibraryItem extends DataClass implements Insertable<LibraryItem> {
     posterPath: posterPath.present ? posterPath.value : this.posterPath,
     overview: overview ?? this.overview,
     releaseYear: releaseYear.present ? releaseYear.value : this.releaseYear,
+    runtimeMinutes: runtimeMinutes.present
+        ? runtimeMinutes.value
+        : this.runtimeMinutes,
     status: status ?? this.status,
     userRating: userRating.present ? userRating.value : this.userRating,
     note: note.present ? note.value : this.note,
@@ -552,6 +591,9 @@ class LibraryItem extends DataClass implements Insertable<LibraryItem> {
       releaseYear: data.releaseYear.present
           ? data.releaseYear.value
           : this.releaseYear,
+      runtimeMinutes: data.runtimeMinutes.present
+          ? data.runtimeMinutes.value
+          : this.runtimeMinutes,
       status: data.status.present ? data.status.value : this.status,
       userRating: data.userRating.present
           ? data.userRating.value
@@ -574,6 +616,7 @@ class LibraryItem extends DataClass implements Insertable<LibraryItem> {
           ..write('posterPath: $posterPath, ')
           ..write('overview: $overview, ')
           ..write('releaseYear: $releaseYear, ')
+          ..write('runtimeMinutes: $runtimeMinutes, ')
           ..write('status: $status, ')
           ..write('userRating: $userRating, ')
           ..write('note: $note, ')
@@ -594,6 +637,7 @@ class LibraryItem extends DataClass implements Insertable<LibraryItem> {
     posterPath,
     overview,
     releaseYear,
+    runtimeMinutes,
     status,
     userRating,
     note,
@@ -613,6 +657,7 @@ class LibraryItem extends DataClass implements Insertable<LibraryItem> {
           other.posterPath == this.posterPath &&
           other.overview == this.overview &&
           other.releaseYear == this.releaseYear &&
+          other.runtimeMinutes == this.runtimeMinutes &&
           other.status == this.status &&
           other.userRating == this.userRating &&
           other.note == this.note &&
@@ -630,6 +675,7 @@ class LibraryItemsCompanion extends UpdateCompanion<LibraryItem> {
   final Value<String?> posterPath;
   final Value<String> overview;
   final Value<int?> releaseYear;
+  final Value<int?> runtimeMinutes;
   final Value<WatchStatus> status;
   final Value<int?> userRating;
   final Value<String?> note;
@@ -645,6 +691,7 @@ class LibraryItemsCompanion extends UpdateCompanion<LibraryItem> {
     this.posterPath = const Value.absent(),
     this.overview = const Value.absent(),
     this.releaseYear = const Value.absent(),
+    this.runtimeMinutes = const Value.absent(),
     this.status = const Value.absent(),
     this.userRating = const Value.absent(),
     this.note = const Value.absent(),
@@ -661,6 +708,7 @@ class LibraryItemsCompanion extends UpdateCompanion<LibraryItem> {
     this.posterPath = const Value.absent(),
     this.overview = const Value.absent(),
     this.releaseYear = const Value.absent(),
+    this.runtimeMinutes = const Value.absent(),
     required WatchStatus status,
     this.userRating = const Value.absent(),
     this.note = const Value.absent(),
@@ -682,6 +730,7 @@ class LibraryItemsCompanion extends UpdateCompanion<LibraryItem> {
     Expression<String>? posterPath,
     Expression<String>? overview,
     Expression<int>? releaseYear,
+    Expression<int>? runtimeMinutes,
     Expression<String>? status,
     Expression<int>? userRating,
     Expression<String>? note,
@@ -698,6 +747,7 @@ class LibraryItemsCompanion extends UpdateCompanion<LibraryItem> {
       if (posterPath != null) 'poster_path': posterPath,
       if (overview != null) 'overview': overview,
       if (releaseYear != null) 'release_year': releaseYear,
+      if (runtimeMinutes != null) 'runtime_minutes': runtimeMinutes,
       if (status != null) 'status': status,
       if (userRating != null) 'user_rating': userRating,
       if (note != null) 'note': note,
@@ -716,6 +766,7 @@ class LibraryItemsCompanion extends UpdateCompanion<LibraryItem> {
     Value<String?>? posterPath,
     Value<String>? overview,
     Value<int?>? releaseYear,
+    Value<int?>? runtimeMinutes,
     Value<WatchStatus>? status,
     Value<int?>? userRating,
     Value<String?>? note,
@@ -732,6 +783,7 @@ class LibraryItemsCompanion extends UpdateCompanion<LibraryItem> {
       posterPath: posterPath ?? this.posterPath,
       overview: overview ?? this.overview,
       releaseYear: releaseYear ?? this.releaseYear,
+      runtimeMinutes: runtimeMinutes ?? this.runtimeMinutes,
       status: status ?? this.status,
       userRating: userRating ?? this.userRating,
       note: note ?? this.note,
@@ -770,6 +822,9 @@ class LibraryItemsCompanion extends UpdateCompanion<LibraryItem> {
     if (releaseYear.present) {
       map['release_year'] = Variable<int>(releaseYear.value);
     }
+    if (runtimeMinutes.present) {
+      map['runtime_minutes'] = Variable<int>(runtimeMinutes.value);
+    }
     if (status.present) {
       map['status'] = Variable<String>(
         $LibraryItemsTable.$converterstatus.toSql(status.value),
@@ -804,6 +859,7 @@ class LibraryItemsCompanion extends UpdateCompanion<LibraryItem> {
           ..write('posterPath: $posterPath, ')
           ..write('overview: $overview, ')
           ..write('releaseYear: $releaseYear, ')
+          ..write('runtimeMinutes: $runtimeMinutes, ')
           ..write('status: $status, ')
           ..write('userRating: $userRating, ')
           ..write('note: $note, ')
@@ -2006,6 +2062,7 @@ typedef $$LibraryItemsTableCreateCompanionBuilder =
       Value<String?> posterPath,
       Value<String> overview,
       Value<int?> releaseYear,
+      Value<int?> runtimeMinutes,
       required WatchStatus status,
       Value<int?> userRating,
       Value<String?> note,
@@ -2023,6 +2080,7 @@ typedef $$LibraryItemsTableUpdateCompanionBuilder =
       Value<String?> posterPath,
       Value<String> overview,
       Value<int?> releaseYear,
+      Value<int?> runtimeMinutes,
       Value<WatchStatus> status,
       Value<int?> userRating,
       Value<String?> note,
@@ -2139,6 +2197,11 @@ class $$LibraryItemsTableFilterComposer
 
   ColumnFilters<int> get releaseYear => $composableBuilder(
     column: $table.releaseYear,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get runtimeMinutes => $composableBuilder(
+    column: $table.runtimeMinutes,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2298,6 +2361,11 @@ class $$LibraryItemsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get runtimeMinutes => $composableBuilder(
+    column: $table.runtimeMinutes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get status => $composableBuilder(
     column: $table.status,
     builder: (column) => ColumnOrderings(column),
@@ -2365,6 +2433,11 @@ class $$LibraryItemsTableAnnotationComposer
 
   GeneratedColumn<int> get releaseYear => $composableBuilder(
     column: $table.releaseYear,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get runtimeMinutes => $composableBuilder(
+    column: $table.runtimeMinutes,
     builder: (column) => column,
   );
 
@@ -2504,6 +2577,7 @@ class $$LibraryItemsTableTableManager
                 Value<String?> posterPath = const Value.absent(),
                 Value<String> overview = const Value.absent(),
                 Value<int?> releaseYear = const Value.absent(),
+                Value<int?> runtimeMinutes = const Value.absent(),
                 Value<WatchStatus> status = const Value.absent(),
                 Value<int?> userRating = const Value.absent(),
                 Value<String?> note = const Value.absent(),
@@ -2519,6 +2593,7 @@ class $$LibraryItemsTableTableManager
                 posterPath: posterPath,
                 overview: overview,
                 releaseYear: releaseYear,
+                runtimeMinutes: runtimeMinutes,
                 status: status,
                 userRating: userRating,
                 note: note,
@@ -2536,6 +2611,7 @@ class $$LibraryItemsTableTableManager
                 Value<String?> posterPath = const Value.absent(),
                 Value<String> overview = const Value.absent(),
                 Value<int?> releaseYear = const Value.absent(),
+                Value<int?> runtimeMinutes = const Value.absent(),
                 required WatchStatus status,
                 Value<int?> userRating = const Value.absent(),
                 Value<String?> note = const Value.absent(),
@@ -2551,6 +2627,7 @@ class $$LibraryItemsTableTableManager
                 posterPath: posterPath,
                 overview: overview,
                 releaseYear: releaseYear,
+                runtimeMinutes: runtimeMinutes,
                 status: status,
                 userRating: userRating,
                 note: note,

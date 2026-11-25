@@ -64,6 +64,9 @@ class LibraryService {
     if (summary.mediaType != MediaType.tv) return AddResult(id);
     try {
       await refreshSeasons(id, summary.tmdbId);
+      if (status == WatchStatus.watched) {
+        await _episodes.markAll(id);
+      }
       return AddResult(id);
     } on TmdbException catch (e) {
       return AddResult(id, seasonError: e);
@@ -164,6 +167,7 @@ class LibraryService {
               posterPath: Value(src.posterPath),
               overview: Value(src.overview),
               releaseYear: Value(src.releaseYear),
+              runtimeMinutes: Value(src.runtimeMinutes),
               status: Value(src.status),
               userRating: Value(src.userRating),
               note: Value(src.note),
@@ -182,6 +186,7 @@ class LibraryService {
                   posterPath: Value(src.posterPath),
                   overview: Value(src.overview),
                   releaseYear: Value(src.releaseYear),
+                  runtimeMinutes: Value(src.runtimeMinutes),
                   status: src.status,
                   userRating: Value(src.userRating),
                   note: Value(src.note),
@@ -261,6 +266,25 @@ class LibraryService {
           ),
         );
   }
+
+  /// Silently removes an auto-created `planned` entry when the user un-favorites
+  /// a title right after favoriting it, provided no rating/note/episodes exist.
+  Future<void> removeIfUnmodifiedPlanned(TitleKey key) =>
+      _db.transaction(() async {
+        final item = await _library.findByKey(key);
+        if (item == null ||
+            item.status != WatchStatus.planned ||
+            item.userRating != null ||
+            (item.note != null && item.note!.isNotEmpty)) {
+          return;
+        }
+        final hasEpisodes = await (_db.select(_db.watchedEpisodes)
+              ..where((t) => t.itemId.equals(item.id))
+              ..limit(1))
+            .getSingleOrNull();
+        if (hasEpisodes != null) return;
+        await _library.remove(item.id);
+      });
 
   Future<void> refreshSeasons(int itemId, int tmdbId) async {
     final client = _client();

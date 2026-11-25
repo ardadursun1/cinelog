@@ -16,6 +16,7 @@ class LibraryEntry {
     required this.watchedEpisodeCount,
     required this.totalEpisodeCount,
     this.seasonCounts = const [],
+    this.watchedEpisodes = const {},
     this.lastSeason,
     this.lastEpisode,
   });
@@ -23,6 +24,7 @@ class LibraryEntry {
   final LibraryItem item;
   final List<Genre> genres;
   final List<(int season, int episodeCount)> seasonCounts;
+  final Set<(int season, int episode)> watchedEpisodes;
   final int watchedEpisodeCount;
   final int totalEpisodeCount;
   final int? lastSeason;
@@ -33,50 +35,40 @@ class LibraryEntry {
   bool get isTv => item.mediaType == MediaType.tv;
 
   String? get progressLabel {
-    if (!isTv || lastSeason == null || lastEpisode == null) return null;
+    if (!isTv || item.status == WatchStatus.planned) return null;
+    if (lastSeason == null || lastEpisode == null) return null;
     final position = formatEpisodeCode(lastSeason!, lastEpisode!);
     return totalEpisodeCount > 0
         ? '$position · $watchedEpisodeCount/$totalEpisodeCount'
         : position;
   }
 
-  /// Returns the next unwatched `(season, episode)` for a TV show, or `null`
-  /// if it is a movie or already completed.
+  /// Returns the first unwatched `(season, episode)` in chronological order
+  /// (never skipping gaps between watched seasons/episodes), or `null` if it
+  /// is a movie or already completed.
   (int season, int episode)? get nextEpisode {
     if (!isTv || item.status == WatchStatus.watched) return null;
     if (totalEpisodeCount > 0 && watchedEpisodeCount >= totalEpisodeCount) {
       return null;
     }
 
+    if (seasonCounts.isNotEmpty) {
+      for (final (sNum, epCount) in seasonCounts) {
+        for (var ep = 1; ep <= epCount; ep++) {
+          if (!watchedEpisodes.contains((sNum, ep))) {
+            return (sNum, ep);
+          }
+        }
+      }
+      return null;
+    }
+
     final lastS = lastSeason;
     final lastE = lastEpisode;
     if (lastS == null || lastE == null) {
-      if (seasonCounts.isNotEmpty) {
-        return (seasonCounts.first.$1, 1);
-      }
       return (1, 1);
     }
-
-    if (seasonCounts.isEmpty) {
-      return (lastS, lastE + 1);
-    }
-
-    for (var i = 0; i < seasonCounts.length; i++) {
-      final (sNum, epCount) = seasonCounts[i];
-      if (sNum == lastS) {
-        if (lastE < epCount) {
-          return (lastS, lastE + 1);
-        }
-        if (i + 1 < seasonCounts.length) {
-          return (seasonCounts[i + 1].$1, 1);
-        }
-        return null;
-      }
-      if (sNum > lastS) {
-        return (sNum, 1);
-      }
-    }
-    return null;
+    return (lastS, lastE + 1);
   }
 
   String? get nextEpisodeLabel {
@@ -93,6 +85,7 @@ class LibraryEntry {
         posterPath: item.posterPath,
         overview: item.overview,
         releaseYear: item.releaseYear,
+        runtimeMinutes: item.runtimeMinutes,
         genres: genres,
       );
 }

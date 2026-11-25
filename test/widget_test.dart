@@ -1,9 +1,13 @@
+import 'package:dio/dio.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:movie_tracker/core/database/app_database.dart';
 import 'package:movie_tracker/core/database/settings_dao.dart';
+import 'package:movie_tracker/core/l10n/app_language.dart';
+import 'package:movie_tracker/core/models/content_category.dart';
 import 'package:movie_tracker/core/models/media_type.dart';
 import 'package:movie_tracker/core/models/title_summary.dart';
+import 'package:movie_tracker/core/network/tmdb_client.dart';
 import 'package:movie_tracker/core/network/tmdb_models.dart';
 import 'package:movie_tracker/core/settings/app_settings_providers.dart';
 import 'package:movie_tracker/features/backup/data/backup_codec.dart';
@@ -288,6 +292,165 @@ void main() {
       final favAfterRestore =
           await settingsDao.watch(SettingKeys.favoriteTitles).first;
       expect(parseFavoriteTitleKeys(favAfterRestore), contains(show.key));
+    });
+
+    test(
+        'excluding anime or kdrama preserves non-Japanese animations and '
+        'non-Korean dramas', () async {
+      final animeCat = kCategoryByKey['anime']!;
+      final kdramaCat = kCategoryByKey['kdrama']!;
+
+      const spiderVerse = TmdbSearchItem(
+        id: 569094,
+        mediaType: MediaType.movie,
+        title: 'Spider-Verse',
+        originalTitle: 'Spider-Man: Across the Spider-Verse',
+        posterPath: '/sv.jpg',
+        overview: '',
+        year: 2023,
+        voteAverage: 8.4,
+        genreIds: [16, 28],
+        originalLanguage: 'en',
+      );
+      const jujutsu = TmdbSearchItem(
+        id: 95479,
+        mediaType: MediaType.tv,
+        title: 'Jujutsu Kaisen',
+        originalTitle: '呪術廻戦',
+        posterPath: '/jjk.jpg',
+        overview: '',
+        year: 2020,
+        voteAverage: 8.5,
+        genreIds: [16, 10759],
+        originalLanguage: 'ja',
+      );
+      const squidGame = TmdbSearchItem(
+        id: 93405,
+        mediaType: MediaType.tv,
+        title: 'Squid Game',
+        originalTitle: '오징어 게임',
+        posterPath: '/sg.jpg',
+        overview: '',
+        year: 2021,
+        voteAverage: 7.8,
+        genreIds: [18, 9648],
+        originalLanguage: 'ko',
+      );
+
+      expect(animeCat.matchesExcluded(jujutsu), isTrue);
+      expect(animeCat.matchesExcluded(spiderVerse), isFalse);
+      expect(kdramaCat.matchesExcluded(squidGame), isTrue);
+      expect(kdramaCat.matchesExcluded(spiderVerse), isFalse);
+
+      Map<String, dynamic>? capturedQuery;
+      final dio = Dio();
+      dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            capturedQuery = Map<String, dynamic>.of(options.queryParameters);
+            handler.resolve(
+              Response<Object?>(
+                requestOptions: options,
+                statusCode: 200,
+                data: {'page': 1, 'total_pages': 1, 'results': <Object>[]},
+              ),
+            );
+          },
+        ),
+      );
+      final client = TmdbClient('FAKE_KEY', dio: dio);
+      addTearDown(client.close);
+
+      await client.discover(
+        MediaType.tv,
+        sortByRating: true,
+        excludedCategoryKeys: const {'anime'},
+      );
+      expect(capturedQuery?['without_genres'], isNull);
+      expect(capturedQuery?['without_keywords'], '210024');
+    });
+
+    test(
+        'nextEpisode fills gaps across seasons, stats merge bilingual genres '
+        'and use actual runtimeMinutes, and merge-import preserves user edits',
+        () async {
+      // 1. Episode gap & planned status badge test
+      const tv = TitleSummary(
+        tmdbId: 200,
+        mediaType: MediaType.tv,
+        title: 'Gap Show',
+        releaseYear: 2023,
+      );
+      final tvId = await libraryDao.add(tv, WatchStatus.watching);
+      await libraryDao.setRuntimeMinutes(tvId, 30);
+      await episodeDao.replaceSeasons(tvId, const [
+        SeasonInfo(number: 1, episodeCount: 3, name: 'S1'),
+        SeasonInfo(number: 2, episodeCount: 3, name: 'S2'),
+      ]);
+      await episodeDao.setEpisode(tvId, (1, 1), watched: true);
+      await episodeDao.setEpisode(tvId, (2, 1), watched: true);
+
+      var tvEntry = (await libraryDao.watchEntries().first)
+          .singleWhere((e) => e.item.id == tvId);
+      // Must suggest S01E02 (the first unwatched episode), NOT S02E02!
+      expect(tvEntry.nextEpisode, (1, 2));
+
+      await libraryDao.setStatus(tvId, WatchStatus.planned);
+      tvEntry = (await libraryDao.watchEntries().first)
+          .singleWhere((e) => e.item.id == tvId);
+      expect(tvEntry.progressLabel, isNull);
+
+      // 2. Bilingual genre merging & actual movie runtime test
+      final m1 = await libraryDao.add(
+        const TitleSummary(
+          tmdbId: 601,
+          mediaType: MediaType.movie,
+          title: 'Interstellar',
+          runtimeMinutes: 169,
+          genres: [Genre(878, 'Bilim-Kurgu')],
+        ),
+        WatchStatus.watched,
+      );
+      await libraryDao.setRating(m1, 10);
+      await libraryDao.setNote(m1, 'Mevcut not');
+
+      await libraryDao.add(
+        const TitleSummary(
+          tmdbId: 602,
+          mediaType: MediaType.movie,
+          title: 'Arrival',
+          runtimeMinutes: 116,
+          genres: [Genre(878, 'Science Fiction')],
+        ),
+        WatchStatus.watched,
+      );
+
+      final stats = await statsDao.watchStats().first;
+      // 169 + 116 (movies) + 2 watched episodes * 30m = 345 mins
+      expect(stats.estimatedWatchMinutes, 345);
+      expect(stats.genresFor(AppLanguage.tr).single.label, 'Bilim Kurgu');
+      expect(stats.genresFor(AppLanguage.tr).single.count, 2);
+      expect(stats.genresFor(AppLanguage.en).single.label, 'Sci-Fi');
+      expect(stats.genresFor(AppLanguage.en).single.count, 2);
+
+      // 3. Non-destructive JSON merge mode test (overwriteExisting: false)
+      final incomingJson = BackupCodec.encode([
+        BackupItem(
+          tmdbId: 601,
+          mediaType: MediaType.movie,
+          title: 'Interstellar',
+          status: WatchStatus.planned,
+          userRating: 6,
+          note: 'Eski yedek notu',
+          addedAt: DateTime(2024, 1, 1),
+          updatedAt: DateTime(2024, 1, 1),
+        ),
+      ]);
+      await backupService.importJson(incomingJson, overwriteExisting: false);
+      final afterMerge = (await libraryDao.findById(m1))!;
+      expect(afterMerge.status, WatchStatus.watched);
+      expect(afterMerge.userRating, 10);
+      expect(afterMerge.note, 'Mevcut not');
     });
   });
 }

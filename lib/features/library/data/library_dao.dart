@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/database/tables.dart';
+import '../../../core/models/media_type.dart';
 import '../../../core/models/title_summary.dart';
 import '../domain/library_entry.dart';
 import '../domain/watch_status.dart';
@@ -11,76 +12,83 @@ class LibraryDao {
 
   final AppDatabase _db;
 
-  static const String _fieldSep = '\u001f';
-  static const String _rowSep = '\u001e';
-
-  static const String _entriesSql = '''
-SELECT li.*,
-  (SELECT group_concat(g.genre_id || char(31) || g.genre_name, char(30))
-     FROM item_genres g WHERE g.item_id = li.id) AS genre_list,
-  (SELECT group_concat(s.season_number || char(31) || s.episode_count, char(30))
-     FROM (SELECT season_number, episode_count FROM tv_seasons
-           WHERE item_id = li.id ORDER BY season_number ASC) s) AS season_list,
-  (SELECT COUNT(*) FROM watched_episodes w
-     WHERE w.item_id = li.id) AS watched_episode_count,
-  (SELECT COALESCE(SUM(s.episode_count), 0) FROM tv_seasons s
-     WHERE s.item_id = li.id) AS total_episode_count,
-  (SELECT w.season_number FROM watched_episodes w WHERE w.item_id = li.id
-     ORDER BY w.season_number DESC, w.episode_number DESC LIMIT 1) AS last_season,
-  (SELECT w.episode_number FROM watched_episodes w WHERE w.item_id = li.id
-     ORDER BY w.season_number DESC, w.episode_number DESC LIMIT 1) AS last_episode
-FROM library_items li
-''';
-
-  Stream<List<LibraryEntry>> watchEntries() => _db
-      .customSelect(
-        _entriesSql,
-        readsFrom: {
-          _db.libraryItems,
-          _db.itemGenres,
-          _db.watchedEpisodes,
-          _db.tvSeasons,
-        },
-      )
-      .watch()
-      .map((rows) => rows.map(_mapEntry).toList());
-
-  LibraryEntry _mapEntry(QueryRow row) => LibraryEntry(
-        item: _db.libraryItems.map(row.data),
-        genres: _parseGenres(row.readNullable<String>('genre_list')),
-        seasonCounts: _parseSeasons(row.readNullable<String>('season_list')),
-        watchedEpisodeCount: row.read<int>('watched_episode_count'),
-        totalEpisodeCount: row.read<int>('total_episode_count'),
-        lastSeason: row.readNullable<int>('last_season'),
-        lastEpisode: row.readNullable<int>('last_episode'),
-      );
-
-  static List<(int season, int episodeCount)> _parseSeasons(String? raw) {
-    if (raw == null || raw.isEmpty) return const [];
-    final seasons = <(int, int)>[];
-    for (final part in raw.split(_rowSep)) {
-      final idx = part.indexOf(_fieldSep);
-      if (idx <= 0) continue;
-      final s = int.tryParse(part.substring(0, idx));
-      final c = int.tryParse(part.substring(idx + 1));
-      if (s != null && c != null && s > 0 && c > 0) {
-        seasons.add((s, c));
-      }
+  /// Streams all library entries using 4 flat queries merged in O(N) memory
+  /// instead of N*6 correlated SQL subqueries.
+  Stream<List<LibraryEntry>> watchEntries() async* {
+    yield await _loadEntries();
+    final updates = _db.tableUpdates(
+      TableUpdateQuery.onAllTables([
+        _db.libraryItems,
+        _db.itemGenres,
+        _db.tvSeasons,
+        _db.watchedEpisodes,
+      ]),
+    );
+    await for (final _ in updates) {
+      yield await _loadEntries();
     }
-    seasons.sort((a, b) => a.$1.compareTo(b.$1));
-    return seasons;
   }
 
-  static List<Genre> _parseGenres(String? raw) {
-    if (raw == null || raw.isEmpty) return const [];
-    final genres = <Genre>[];
-    for (final part in raw.split(_rowSep)) {
-      final idx = part.indexOf(_fieldSep);
-      if (idx <= 0) continue;
-      final id = int.tryParse(part.substring(0, idx));
-      if (id != null) genres.add(Genre(id, part.substring(idx + 1)));
+  Future<List<LibraryEntry>> _loadEntries() async {
+    final items = await _db.select(_db.libraryItems).get();
+    if (items.isEmpty) return const [];
+
+    final results = await Future.wait([
+      _db.select(_db.itemGenres).get(),
+      (_db.select(_db.tvSeasons)
+            ..orderBy([
+              (t) => OrderingTerm.asc(t.itemId),
+              (t) => OrderingTerm.asc(t.seasonNumber),
+            ]))
+          .get(),
+      _db.select(_db.watchedEpisodes).get(),
+    ]);
+
+    final genreRows = results[0] as List<ItemGenre>;
+    final seasonRows = results[1] as List<TvSeason>;
+    final episodeRows = results[2] as List<WatchedEpisode>;
+
+    final genresByItem = <int, List<Genre>>{};
+    for (final g in genreRows) {
+      (genresByItem[g.itemId] ??= []).add(Genre(g.genreId, g.genreName));
     }
-    return genres;
+
+    final seasonsByItem = <int, List<(int, int)>>{};
+    final totalEpByItem = <int, int>{};
+    for (final s in seasonRows) {
+      if (s.seasonNumber > 0 && s.episodeCount > 0) {
+        (seasonsByItem[s.itemId] ??= []).add((s.seasonNumber, s.episodeCount));
+        totalEpByItem[s.itemId] =
+            (totalEpByItem[s.itemId] ?? 0) + s.episodeCount;
+      }
+    }
+
+    final watchedSetByItem = <int, Set<(int, int)>>{};
+    final lastEpByItem = <int, (int, int)>{};
+    for (final w in episodeRows) {
+      final pair = (w.seasonNumber, w.episodeNumber);
+      (watchedSetByItem[w.itemId] ??= {}).add(pair);
+      final prev = lastEpByItem[w.itemId];
+      if (prev == null ||
+          pair.$1 > prev.$1 ||
+          (pair.$1 == prev.$1 && pair.$2 > prev.$2)) {
+        lastEpByItem[w.itemId] = pair;
+      }
+    }
+
+    return [
+      for (final item in items)
+        LibraryEntry(
+          item: item,
+          genres: genresByItem[item.id] ?? const [],
+          seasonCounts: seasonsByItem[item.id] ?? const [],
+          watchedEpisodes: watchedSetByItem[item.id] ?? const {},
+          watchedEpisodeCount: watchedSetByItem[item.id]?.length ?? 0,
+          totalEpisodeCount: totalEpByItem[item.id] ?? 0,
+          lastSeason: lastEpByItem[item.id]?.$1,
+          lastEpisode: lastEpByItem[item.id]?.$2,
+        ),
+    ];
   }
 
   Stream<LibraryItem?> watchItem(TitleKey key) => (_db.select(_db.libraryItems)
@@ -112,6 +120,7 @@ FROM library_items li
               posterPath: Value(summary.posterPath),
               overview: Value(summary.overview),
               releaseYear: Value(summary.releaseYear),
+              runtimeMinutes: Value(summary.runtimeMinutes),
               status: status,
               addedAt: now,
               updatedAt: now,
@@ -149,6 +158,30 @@ FROM library_items li
             updatedAt: Value(now),
           ),
         );
+        // Keep episode checkboxes consistent when a TV show is directly marked Watched.
+        if (status == WatchStatus.watched && item.mediaType == MediaType.tv) {
+          final seasons = await (_db.select(_db.tvSeasons)
+                ..where((t) => t.itemId.equals(id)))
+              .get();
+          if (seasons.isNotEmpty) {
+            await _db.batch(
+              (b) => b.insertAll(
+                _db.watchedEpisodes,
+                [
+                  for (final s in seasons)
+                    for (var ep = 1; ep <= s.episodeCount; ep++)
+                      WatchedEpisodesCompanion.insert(
+                        itemId: id,
+                        seasonNumber: s.seasonNumber,
+                        episodeNumber: ep,
+                        watchedAt: now,
+                      ),
+                ],
+                mode: InsertMode.insertOrIgnore,
+              ),
+            );
+          }
+        }
       });
 
   Future<void> setRating(int id, int? rating) {
@@ -178,8 +211,21 @@ FROM library_items li
     );
   }
 
+  Future<void> setRuntimeMinutes(int id, int? runtimeMinutes) {
+    if (runtimeMinutes != null &&
+        (runtimeMinutes <= 0 || runtimeMinutes > 1500)) {
+      return Future.value();
+    }
+    return _update(
+      id,
+      LibraryItemsCompanion(
+        runtimeMinutes: Value(runtimeMinutes),
+      ),
+    );
+  }
+
   Future<void> remove(int id) =>
-      (_db.delete(_db.libraryItems)..where((t) => t.id.equals(id))).go();
+       (_db.delete(_db.libraryItems)..where((t) => t.id.equals(id))).go();
 
   Future<void> _update(int id, LibraryItemsCompanion companion) =>
       (_db.update(_db.libraryItems)..where((t) => t.id.equals(id)))

@@ -3,9 +3,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/l10n/app_language.dart';
 import '../../../core/models/title_summary.dart';
-import '../../../core/network/tmdb_models.dart';
 import '../../../core/settings/app_settings_providers.dart';
+import '../../../core/widgets/cached_tmdb_image.dart';
 import '../../library/domain/watch_status.dart';
 import '../../library/presentation/library_providers.dart';
 import 'title_detail_dialog.dart';
@@ -14,11 +15,17 @@ Future<void> showRandomPickDialog(
   BuildContext context, {
   required List<TitleSummary> candidates,
   required String sourceLabel,
+  AppLanguage lang = AppLanguage.tr,
 }) {
   if (candidates.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Öneri yapılabilecek film veya dizi bulunamadı.'),
+      SnackBar(
+        content: Text(
+          lang.pick(
+            'Öneri yapılabilecek film veya dizi bulunamadı.',
+            'No movies or TV shows available to suggest.',
+          ),
+        ),
       ),
     );
     return Future.value();
@@ -108,19 +115,13 @@ class _RandomPickDialogState extends ConsumerState<_RandomPickDialog> {
               child: SizedBox(
                 width: 140,
                 height: 210,
-                child: summary.posterPath != null
-                    ? Image.network(
-                        tmdbPosterUrl(summary.posterPath!),
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => ColoredBox(
-                          color: scheme.surfaceContainerHighest,
-                          child: const Icon(Icons.movie, size: 42),
-                        ),
-                      )
-                    : ColoredBox(
-                        color: scheme.surfaceContainerHighest,
-                        child: const Icon(Icons.movie, size: 42),
-                      ),
+                child: CachedTmdbImage(
+                  imagePath: summary.posterPath,
+                  size: 'w342',
+                  cacheWidth: 280,
+                  placeholderIcon: Icons.movie,
+                  placeholderIconSize: 42,
+                ),
               ),
             ),
             const SizedBox(width: 18),

@@ -17,6 +17,7 @@ class LibraryItems extends Table {
   TextColumn get posterPath => text().nullable()();
   TextColumn get overview => text().withDefault(const Constant(''))();
   IntColumn get releaseYear => integer().nullable()();
+  IntColumn get runtimeMinutes => integer().nullable()();
   TextColumn get status => textEnum<WatchStatus>()();
   IntColumn get userRating =>
       integer().nullable().check(userRating.isBetweenValues(1, 10))();

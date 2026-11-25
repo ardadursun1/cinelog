@@ -89,7 +89,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     }
     final availableGenres = [
       for (final e in genreMap.entries) Genre(e.key, e.value),
-    ]..sort((a, b) => a.name.compareTo(b.name));
+    ]..sort((a, b) => a.labelFor(lang).compareTo(b.labelFor(lang)));
     final activeGenreId =
         genreMap.containsKey(filter.genreId) ? filter.genreId : null;
 
@@ -162,6 +162,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                                   'From My Watchlist',
                                 )
                               : lang.pick('Kütüphanemden', 'From My Library'),
+                          lang: lang,
                         );
                       },
                     ),
@@ -225,7 +226,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                         for (final g in availableGenres)
                           DropdownMenuItem<int?>(
                             value: g.id,
-                            child: Text(g.name),
+                            child: Text(g.labelFor(lang)),
                           ),
                       ],
                     ),

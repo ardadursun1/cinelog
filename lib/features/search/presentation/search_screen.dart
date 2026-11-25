@@ -180,15 +180,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       _ensureViewportFilled();
     } on TmdbException catch (e) {
       if (!mounted || e.kind == TmdbErrorKind.cancelled) return;
+      final lang = ref.read(currentLanguageProvider);
       setState(() {
         _loading = false;
-        _error = e.userMessage;
+        _error = e.userMessageForLang(lang);
       });
     } catch (e) {
       if (!mounted) return;
+      final lang = ref.read(currentLanguageProvider);
       setState(() {
         _loading = false;
-        _error = userMessageFor(e);
+        _error = userMessageFor(e, lang);
       });
     }
   }
@@ -216,12 +218,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       final page = await _fetchPage(client, _activeQuery, nextPage, token);
       if (!mounted || token.isCancelled) return;
       final seen = <TitleKey>{for (final i in _items) i.key};
+      final combined = [
+        ..._items,
+        for (final i in page.results)
+          if (seen.add(i.key)) i,
+      ];
+      final sortByRating =
+          _activeQuery.isEmpty && _feed != _DiscoverFeed.popular;
       setState(() {
-        _items = [
-          ..._items,
-          for (final i in page.results)
-            if (seen.add(i.key)) i,
-        ];
+        _items =
+            sortByRating ? TmdbClient.sortByWeightedRating(combined) : combined;
         _page = page.page;
         _totalPages = page.totalPages;
         _loadingMore = false;
@@ -263,7 +269,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             '${_feed.labelFor(lang)}${catName != null ? " · $catName" : ""} listesinden',
             'From ${_feed.labelFor(lang)}${catName != null ? " · $catName" : ""}',
           );
-    showRandomPickDialog(context, candidates: pool, sourceLabel: source);
+    showRandomPickDialog(
+      context,
+      candidates: pool,
+      sourceLabel: source,
+      lang: lang,
+    );
   }
 
   Future<void> _saveExcludedCategories(Set<String> keys) async {

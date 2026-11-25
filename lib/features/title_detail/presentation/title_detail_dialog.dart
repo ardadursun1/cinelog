@@ -12,6 +12,7 @@ import '../../../core/models/title_summary.dart';
 import '../../../core/network/tmdb_models.dart';
 import '../../../core/network/tmdb_providers.dart';
 import '../../../core/settings/app_settings_providers.dart';
+import '../../../core/widgets/cached_tmdb_image.dart';
 import '../../episodes/presentation/season_episode_panel.dart';
 import '../../library/domain/watch_status.dart';
 import '../../library/presentation/library_providers.dart';
@@ -39,12 +40,19 @@ class TitleDetailDialog extends ConsumerStatefulWidget {
 
 class _TitleDetailDialogState extends ConsumerState<TitleDetailDialog> {
   final TextEditingController _noteController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  final List<TitleSummary> _history = [];
+
+  late TitleSummary _currentSummary = widget.summary;
   int? _boundItemId;
+  int? _syncedRuntimeItemId;
   bool _savingNote = false;
+  bool _autoAddedByFavorite = false;
 
   @override
   void dispose() {
     _noteController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -56,6 +64,72 @@ class _TitleDetailDialogState extends ConsumerState<TitleDetailDialog> {
     if (_boundItemId != item.id) {
       _boundItemId = item.id;
       _noteController.text = item.note ?? '';
+    }
+  }
+
+  void _syncRuntimeIfNeeded(LibraryItem? item, int? fetchedRuntime) {
+    if (item == null ||
+        fetchedRuntime == null ||
+        fetchedRuntime <= 0 ||
+        item.runtimeMinutes == fetchedRuntime ||
+        _syncedRuntimeItemId == item.id) {
+      return;
+    }
+    _syncedRuntimeItemId = item.id;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(libraryDaoProvider).setRuntimeMinutes(item.id, fetchedRuntime);
+    });
+  }
+
+  Future<void> _flushUnsavedNoteIfNeeded(LibraryItem? item) async {
+    if (item == null || _boundItemId != item.id) return;
+    final trimmed = _noteController.text.trim();
+    final normalizedNew = trimmed.isEmpty ? null : trimmed;
+    final normalizedOld =
+        (item.note == null || item.note!.trim().isEmpty) ? null : item.note!.trim();
+    if (normalizedNew == normalizedOld) return;
+    if (normalizedNew != null && normalizedNew.length > kNoteMaxLength) return;
+    await ref.read(libraryDaoProvider).setNote(item.id, normalizedNew);
+  }
+
+  Future<void> _closeDialog(LibraryItem? item) async {
+    await _flushUnsavedNoteIfNeeded(item);
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  Future<void> _navigateToSummary(
+    TitleSummary nextSummary,
+    LibraryItem? currentItem,
+  ) async {
+    await _flushUnsavedNoteIfNeeded(currentItem);
+    if (!mounted) return;
+    setState(() {
+      _history.add(_currentSummary);
+      _currentSummary = nextSummary;
+      _boundItemId = null;
+      _syncedRuntimeItemId = null;
+      _autoAddedByFavorite = false;
+      _noteController.clear();
+    });
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
+  }
+
+  Future<void> _navigateBack(LibraryItem? currentItem) async {
+    if (_history.isEmpty) return;
+    await _flushUnsavedNoteIfNeeded(currentItem);
+    if (!mounted) return;
+    setState(() {
+      _currentSummary = _history.removeLast();
+      _boundItemId = null;
+      _syncedRuntimeItemId = null;
+      _autoAddedByFavorite = false;
+      _noteController.clear();
+    });
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0);
     }
   }
 
@@ -148,18 +222,20 @@ class _TitleDetailDialogState extends ConsumerState<TitleDetailDialog> {
     final lang = ref.watch(currentLanguageProvider);
     final favorites =
         ref.watch(favoriteTitlesProvider).value ?? const <TitleKey>{};
-    final summary = widget.summary;
+    final summary = _currentSummary;
     final itemAsync = ref.watch(libraryItemProvider(summary.key));
     final richAsync = ref.watch(richTitleDetailsProvider(summary.key));
     final rich = richAsync.value;
     final item = itemAsync.value;
     final isFavorite = favorites.contains(summary.key);
     _syncNoteField(item);
+    _syncRuntimeIfNeeded(item, rich?.runtimeMinutes);
 
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    final runtimeText = switch (rich?.runtimeMinutes) {
+    final effectiveRuntime = rich?.runtimeMinutes ?? item?.runtimeMinutes;
+    final runtimeText = switch (effectiveRuntime) {
       final m? when summary.mediaType == MediaType.movie =>
         lang.pick('$m dk', '$m min'),
       final m? => lang.pick('~$m dk / bölüm', '~$m min / ep'),
@@ -172,64 +248,76 @@ class _TitleDetailDialogState extends ConsumerState<TitleDetailDialog> {
         '★ ${summary.voteAverage!.toStringAsFixed(1)}',
     ];
 
-    return Dialog(
-      insetPadding: const EdgeInsets.all(24),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 860, maxHeight: 760),
-        child: Column(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: SizedBox(
-                            width: 160,
-                            height: 240,
-                            child: summary.posterPath != null
-                                ? Image.network(
-                                    tmdbPosterUrl(summary.posterPath!),
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, _, _) => ColoredBox(
-                                      color: scheme.surfaceContainerHighest,
-                                      child: const Icon(Icons.movie, size: 48),
-                                    ),
-                                  )
-                                : ColoredBox(
-                                    color: scheme.surfaceContainerHighest,
-                                    child: const Icon(Icons.movie, size: 48),
-                                  ),
+    return PopScope(
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) {
+          _flushUnsavedNoteIfNeeded(item);
+        }
+      },
+      child: Dialog(
+        insetPadding: const EdgeInsets.all(24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 860, maxHeight: 760),
+          child: Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: SizedBox(
+                              width: 160,
+                              height: 240,
+                              child: CachedTmdbImage(
+                                imagePath: summary.posterPath,
+                                size: 'w342',
+                                cacheWidth: 320,
+                                placeholderIcon: Icons.movie,
+                                placeholderIconSize: 48,
+                              ),
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 20),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      summary.title,
-                                      style: textTheme.headlineSmall?.copyWith(
-                                        fontWeight: FontWeight.bold,
+                          const SizedBox(width: 20),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    if (_history.isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(right: 4),
+                                        child: IconButton(
+                                          tooltip: lang.pick(
+                                            'Önceki yapıma dön',
+                                            'Back to previous title',
+                                          ),
+                                          onPressed: () => _navigateBack(item),
+                                          icon: const Icon(Icons.arrow_back),
+                                        ),
+                                      ),
+                                    Expanded(
+                                      child: Text(
+                                        summary.title,
+                                        style: textTheme.headlineSmall?.copyWith(
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  IconButton(
-                                    tooltip: lang.pick('Kapat', 'Close'),
-                                    onPressed: () =>
-                                        Navigator.of(context).pop(),
-                                    icon: const Icon(Icons.close),
-                                  ),
-                                ],
-                              ),
+                                    IconButton(
+                                      tooltip: lang.pick('Kapat', 'Close'),
+                                      onPressed: () => _closeDialog(item),
+                                      icon: const Icon(Icons.close),
+                                    ),
+                                  ],
+                                ),
                               if (summary.originalTitle.isNotEmpty &&
                                   summary.originalTitle != summary.title)
                                 Padding(
@@ -331,7 +419,7 @@ class _TitleDetailDialogState extends ConsumerState<TitleDetailDialog> {
                                 runSpacing: 10,
                                 crossAxisAlignment: WrapCrossAlignment.center,
                                 children: [
-                                  _buildStatusSection(item, lang),
+                                  _buildStatusSection(summary, item, lang),
                                   FilterChip(
                                     avatar: Icon(
                                       isFavorite
@@ -345,14 +433,29 @@ class _TitleDetailDialogState extends ConsumerState<TitleDetailDialog> {
                                     ),
                                     selected: isFavorite,
                                     onSelected: (_) async {
+                                      final wasNullItem = item == null;
+                                      final shouldUndoAutoAdd =
+                                          _autoAddedByFavorite &&
+                                              item != null &&
+                                              item.status ==
+                                                  WatchStatus.planned &&
+                                              item.userRating == null;
                                       final added = await toggleFavoriteTitle(
                                         ref,
                                         summary.key,
                                       );
-                                      if (added && item == null) {
+                                      if (added && wasNullItem) {
+                                        _autoAddedByFavorite = true;
                                         await ref
                                             .read(libraryServiceProvider)
                                             .add(summary, WatchStatus.planned);
+                                      } else if (!added && shouldUndoAutoAdd) {
+                                        _autoAddedByFavorite = false;
+                                        await ref
+                                            .read(libraryServiceProvider)
+                                            .removeIfUnmodifiedPlanned(
+                                              summary.key,
+                                            );
                                       }
                                     },
                                   ),
@@ -400,7 +503,11 @@ class _TitleDetailDialogState extends ConsumerState<TitleDetailDialog> {
                     ],
                     if (rich != null && rich.recommendations.isNotEmpty) ...[
                       const Divider(height: 32),
-                      _buildRecommendationsSection(rich.recommendations, lang),
+                      _buildRecommendationsSection(
+                        rich.recommendations,
+                        item,
+                        lang,
+                      ),
                     ],
                   ],
                 ),
@@ -430,7 +537,7 @@ class _TitleDetailDialogState extends ConsumerState<TitleDetailDialog> {
                     ),
                     const Spacer(),
                     FilledButton(
-                      onPressed: () => Navigator.of(context).pop(),
+                      onPressed: () => _closeDialog(item),
                       child: Text(lang.pick('Tamam', 'Done')),
                     ),
                   ],
@@ -439,10 +546,15 @@ class _TitleDetailDialogState extends ConsumerState<TitleDetailDialog> {
           ],
         ),
       ),
+    ),
     );
   }
 
-  Widget _buildStatusSection(LibraryItem? item, AppLanguage lang) {
+  Widget _buildStatusSection(
+    TitleSummary summary,
+    LibraryItem? item,
+    AppLanguage lang,
+  ) {
     final service = ref.read(libraryServiceProvider);
     final dao = ref.read(libraryDaoProvider);
 
@@ -454,7 +566,8 @@ class _TitleDetailDialogState extends ConsumerState<TitleDetailDialog> {
           for (final status in WatchStatus.values)
             FilledButton.tonalIcon(
               onPressed: () async {
-                final res = await service.add(widget.summary, status);
+                _autoAddedByFavorite = false;
+                final res = await service.add(summary, status);
                 if (res.seasonError != null && mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
@@ -493,6 +606,7 @@ class _TitleDetailDialogState extends ConsumerState<TitleDetailDialog> {
       ],
       selected: {item.status},
       onSelectionChanged: (selection) {
+        _autoAddedByFavorite = false;
         dao.setStatus(item.id, selection.first);
       },
     );
@@ -611,13 +725,16 @@ class _TitleDetailDialogState extends ConsumerState<TitleDetailDialog> {
                           if (p.logoPath != null) ...[
                             ClipRRect(
                               borderRadius: BorderRadius.circular(6),
-                              child: Image.network(
-                                tmdbPosterUrl(p.logoPath!, size: 'w92'),
+                              child: SizedBox(
                                 width: 24,
                                 height: 24,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) =>
-                                    const Icon(Icons.tv, size: 18),
+                                child: CachedTmdbImage(
+                                  imagePath: p.logoPath,
+                                  size: 'w92',
+                                  cacheWidth: 64,
+                                  placeholderIcon: Icons.tv,
+                                  placeholderIconSize: 18,
+                                ),
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -753,22 +870,13 @@ class _TitleDetailDialogState extends ConsumerState<TitleDetailDialog> {
                           child: SizedBox(
                             width: 80,
                             height: 96,
-                            child: member.profilePath != null
-                                ? Image.network(
-                                    tmdbPosterUrl(
-                                      member.profilePath!,
-                                      size: 'w185',
-                                    ),
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, _, _) => ColoredBox(
-                                      color: scheme.surfaceContainerHighest,
-                                      child: const Icon(Icons.person_outline),
-                                    ),
-                                  )
-                                : ColoredBox(
-                                    color: scheme.surfaceContainerHighest,
-                                    child: const Icon(Icons.person_outline),
-                                  ),
+                            child: CachedTmdbImage(
+                              imagePath: member.profilePath,
+                              size: 'w185',
+                              cacheWidth: 160,
+                              placeholderIcon: Icons.person_outline,
+                              placeholderIconSize: 28,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 6),
@@ -806,9 +914,9 @@ class _TitleDetailDialogState extends ConsumerState<TitleDetailDialog> {
 
   Widget _buildRecommendationsSection(
     List<TmdbSearchItem> recommendations,
+    LibraryItem? currentItem,
     AppLanguage lang,
   ) {
-    final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final genreMap = ref.watch(genreNamesProvider).value ??
         const <MediaType, Map<int, String>>{};
@@ -833,10 +941,7 @@ class _TitleDetailDialogState extends ConsumerState<TitleDetailDialog> {
                   rec.toSummary(genreMap[rec.mediaType] ?? const {});
               return InkWell(
                 borderRadius: BorderRadius.circular(10),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  showTitleDetailDialog(context, recSummary);
-                },
+                onTap: () => _navigateToSummary(recSummary, currentItem),
                 child: SizedBox(
                   width: 112,
                   child: Column(
@@ -850,22 +955,13 @@ class _TitleDetailDialogState extends ConsumerState<TitleDetailDialog> {
                           child: Stack(
                             fit: StackFit.expand,
                             children: [
-                              rec.posterPath != null
-                                  ? Image.network(
-                                      tmdbPosterUrl(
-                                        rec.posterPath!,
-                                        size: 'w185',
-                                      ),
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, _, _) => ColoredBox(
-                                        color: scheme.surfaceContainerHighest,
-                                        child: const Icon(Icons.movie_outlined),
-                                      ),
-                                    )
-                                  : ColoredBox(
-                                      color: scheme.surfaceContainerHighest,
-                                      child: const Icon(Icons.movie_outlined),
-                                    ),
+                              CachedTmdbImage(
+                                imagePath: rec.posterPath,
+                                size: 'w185',
+                                cacheWidth: 224,
+                                placeholderIcon: Icons.movie_outlined,
+                                placeholderIconSize: 32,
+                              ),
                               if (rec.voteAverage != null)
                                 Positioned(
                                   top: 6,

@@ -9,6 +9,7 @@ import '../../../core/models/media_type.dart';
 import '../../../core/models/title_summary.dart';
 import '../../../core/network/tmdb_models.dart';
 import '../../../core/settings/app_settings_providers.dart';
+import '../../library/domain/watch_status.dart';
 import 'backup_codec.dart';
 
 class ImportResult {
@@ -70,6 +71,7 @@ class BackupService {
           posterPath: i.posterPath,
           overview: i.overview,
           releaseYear: i.releaseYear,
+          runtimeMinutes: i.runtimeMinutes,
           status: i.status,
           userRating: i.userRating,
           note: i.note,
@@ -104,18 +106,23 @@ class BackupService {
     return items.length;
   }
 
-  /// Merges a backup into the library inside one transaction: titles already
-  /// present are overwritten with backup values, watched episodes are unioned.
+  /// Imports a JSON backup inside one transaction.
+  /// When [overwriteExisting] is `true`, conflicting entries are overwritten
+  /// with backup values; when `false`, existing ratings, notes, and `watched`
+  /// statuses are preserved and only missing fields are filled in.
   /// Throws [BackupFormatException] for unusable files.
-  Future<ImportResult> importJson(String source) async {
+  Future<ImportResult> importJson(
+    String source, {
+    bool overwriteExisting = true,
+  }) async {
     final decoded = BackupCodec.decode(source);
     var inserted = 0;
     var updated = 0;
 
     await _db.transaction(() async {
-      final existing = <TitleKey, int>{
+      final existing = <TitleKey, LibraryItem>{
         for (final row in await _db.select(_db.libraryItems).get())
-          (tmdbId: row.tmdbId, mediaType: row.mediaType): row.id,
+          (tmdbId: row.tmdbId, mediaType: row.mediaType): row,
       };
       final favorites = Set<TitleKey>.of(await _readFavorites());
       var favoritesChanged = false;
@@ -125,22 +132,47 @@ class BackupService {
         if (item.isFavorite && favorites.add(key)) {
           favoritesChanged = true;
         }
-        final companion = _toCompanion(item);
-        final existingId = existing[key];
+        final existingRow = existing[key];
         final int id;
-        if (existingId != null) {
-          id = existingId;
+        if (existingRow != null) {
+          id = existingRow.id;
+          final LibraryItemsCompanion updateCompanion;
+          if (overwriteExisting) {
+            updateCompanion = _toCompanion(
+              item,
+              fallbackRuntime: existingRow.runtimeMinutes,
+            );
+          } else {
+            final mergedStatus = (existingRow.status == WatchStatus.watched ||
+                    item.status == WatchStatus.watched)
+                ? WatchStatus.watched
+                : (existingRow.status == WatchStatus.watching ||
+                        item.status == WatchStatus.watching)
+                    ? WatchStatus.watching
+                    : WatchStatus.planned;
+            updateCompanion = LibraryItemsCompanion(
+              status: Value(mergedStatus),
+              userRating: Value(existingRow.userRating ?? item.userRating),
+              note: Value(existingRow.note ?? item.note),
+              runtimeMinutes:
+                  Value(existingRow.runtimeMinutes ?? item.runtimeMinutes),
+              watchedAt: Value(existingRow.watchedAt ?? item.watchedAt),
+              updatedAt: Value(DateTime.now()),
+            );
+          }
           await (_db.update(_db.libraryItems)..where((t) => t.id.equals(id)))
-              .write(companion);
+              .write(updateCompanion);
           updated++;
         } else {
+          final companion = _toCompanion(item);
           id = await _db.into(_db.libraryItems).insert(companion);
-          existing[key] = id;
           inserted++;
         }
 
-        await (_db.delete(_db.itemGenres)..where((t) => t.itemId.equals(id)))
-            .go();
+        if (existingRow == null || overwriteExisting) {
+          await (_db.delete(_db.itemGenres)..where((t) => t.itemId.equals(id)))
+              .go();
+        }
         await _db.batch((b) {
           b.insertAll(
             _db.itemGenres,
@@ -149,7 +181,9 @@ class BackupService {
                 ItemGenresCompanion.insert(
                     itemId: id, genreId: g.id, genreName: g.name),
             ],
-            mode: InsertMode.insertOrReplace,
+            mode: overwriteExisting
+                ? InsertMode.insertOrReplace
+                : InsertMode.insertOrIgnore,
           );
           if (item.mediaType == MediaType.tv) {
             b.insertAllOnConflictUpdate(_db.tvSeasons, [
@@ -195,7 +229,10 @@ class BackupService {
     );
   }
 
-  static LibraryItemsCompanion _toCompanion(BackupItem i) =>
+  static LibraryItemsCompanion _toCompanion(
+    BackupItem i, {
+    int? fallbackRuntime,
+  }) =>
       LibraryItemsCompanion.insert(
         tmdbId: i.tmdbId,
         mediaType: i.mediaType,
@@ -204,6 +241,7 @@ class BackupService {
         posterPath: Value(i.posterPath),
         overview: Value(i.overview),
         releaseYear: Value(i.releaseYear),
+        runtimeMinutes: Value(i.runtimeMinutes ?? fallbackRuntime),
         status: i.status,
         userRating: Value(i.userRating),
         note: Value(i.note),

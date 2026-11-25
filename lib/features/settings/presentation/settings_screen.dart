@@ -14,6 +14,7 @@ import '../../backup/data/backup_service.dart';
 import '../../backup/data/letterboxd_codec.dart';
 import '../../backup/data/letterboxd_import_service.dart';
 import '../../backup/data/zip_archive_reader.dart';
+import '../../library/presentation/library_providers.dart';
 
 const String kTmdbAttributionText =
     'This product uses the TMDB API but is not endorsed or certified by TMDB.';
@@ -113,7 +114,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _exportBackup(AppLanguage lang) async {
     final location = await getSaveLocation(
-      suggestedName: 'movie_tracker_backup.json',
+      suggestedName: 'cinelog_backup.json',
       acceptedTypeGroups: const [
         XTypeGroup(label: 'JSON', extensions: ['json']),
       ],
@@ -193,8 +194,57 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       }
       final bytes = await file.readAsBytes();
       final content = utf8.decode(bytes);
-      final result =
-          await ref.read(backupServiceProvider).importJson(content);
+
+      var overwriteExisting = true;
+      final currentEntries =
+          ref.read(libraryEntriesProvider).value ?? const [];
+      if (currentEntries.isNotEmpty && mounted) {
+        final chosenMode = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(
+              lang.pick('JSON İçe Aktarma Modu', 'JSON Import Mode'),
+            ),
+            content: Text(
+              lang.pick(
+                'Kütüphanende zaten kayıtlı olan yapımlar için nasıl devam edilsin?',
+                'How should entries already present in your library be handled?',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(lang.pick('Vazgeç', 'Cancel')),
+              ),
+              OutlinedButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text(
+                  lang.pick(
+                    'Üzerine Yaz',
+                    'Overwrite Existing',
+                  ),
+                ),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text(
+                  lang.pick(
+                    'Birleştir (Mevcutları Koru)',
+                    'Merge (Keep Existing)',
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+        if (chosenMode == null || !mounted) return;
+        overwriteExisting = chosenMode;
+      }
+
+      final result = await ref.read(backupServiceProvider).importJson(
+            content,
+            overwriteExisting: overwriteExisting,
+          );
       if (mounted) {
         final skipped = result.errors.isEmpty
             ? ''
@@ -216,7 +266,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     } on BackupFormatException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message)),
+          SnackBar(content: Text(e.messageFor(lang))),
         );
       }
     } on FormatException {

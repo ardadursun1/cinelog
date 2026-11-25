@@ -21,7 +21,7 @@ A modern, privacy-friendly desktop movie & TV show tracker built with **Flutter*
 - **Sezon ve Bölüm Takibi:** Dizilerde bölüm bazında işaretleme, *"buraya kadar izledim"* özelliği ve tüm bölümler bittiğinde durumun otomatik **İzledim** olması.
 - **İstatistikler:** Toplam izlenen film/dizi/bölüm sayısı, tahmini toplam ekran süresi (saat/gün), tür ve yıl dağılım grafikleri.
 - **Çift Dil Desteği (`Türkçe` / `English`):** Ayarlar ekranından hem arayüz dilini hem de TMDB içerik dilini (`tr-TR` / `en-US`) anlık değiştirme.
-- **Güvenli JSON Yedekleme:** Kütüphaneyi, favorileri, notları ve bölüm ilerlemesini atomik olarak JSON dosyasına dışa/içe aktarma (API anahtarı yedeklere asla dahil edilmez).
+- **Güvenli JSON Yedekleme & Letterboxd İçe Aktarma:** Kütüphaneyi, favorileri, notları ve bölüm ilerlemesini atomik olarak JSON dosyasına dışa/içe aktarma (Birleştir veya Üzerine Yaz seçenekli; API anahtarı yedeklere asla dahil edilmez) ve **Letterboxd** (`.zip` arşivi veya `.csv` dosyaları) üzerinden izlenenleri, izleme listesini, puanları, yorumları ve favorileri içe aktarma.
 
 ---
 
@@ -39,7 +39,7 @@ A modern, privacy-friendly desktop movie & TV show tracker built with **Flutter*
 - **Season & Episode Tracking:** Track individual episodes or mark *"watched up to here"*; completing all episodes automatically marks a show as **Watched**.
 - **Statistics:** Total watched movies, shows, episodes, estimated watch time, and breakdowns by genre and release year.
 - **Bilingual (`Türkçe` / `English`):** Switch both UI and TMDB metadata language (`tr-TR` / `en-US`) anytime from Settings.
-- **Safe JSON Backup:** Export and import your entire library, favorites, ratings, and episode progress as JSON (API keys are never exported).
+- **Safe JSON Backup & Letterboxd Import:** Export and import your entire library, favorites, ratings, and episode progress as JSON (with Merge or Overwrite modes; API keys are never exported), plus direct **Letterboxd** `.zip` / `.csv` import.
 
 ---
 

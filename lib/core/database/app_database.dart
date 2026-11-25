@@ -21,15 +21,35 @@ class AppDatabase extends _$AppDatabase {
   static const String fileName = 'movie_tracker.sqlite';
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
-        onCreate: (m) => m.createAll(),
+        onCreate: (m) async {
+          await m.createAll();
+          await _createIndexes();
+        },
+        onUpgrade: (m, from, to) async {
+          if (from < 2) {
+            await m.addColumn(libraryItems, libraryItems.runtimeMinutes);
+          }
+          await _createIndexes();
+        },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON');
         },
       );
+
+  Future<void> _createIndexes() async {
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_library_items_status '
+      'ON library_items (status)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_library_items_added_at '
+      'ON library_items (added_at DESC)',
+    );
+  }
 
   static Future<Directory> dataDirectory() async {
     final dir = await getApplicationSupportDirectory();

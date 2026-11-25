@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/l10n/app_language.dart';
 import '../../../core/models/media_type.dart';
+import '../../../core/models/tmdb_genres.dart';
 import '../../library/domain/watch_status.dart';
 
 class CountByLabel<T> {
@@ -13,11 +14,24 @@ class CountByLabel<T> {
   final int count;
 }
 
+class GenreCountRow {
+  const GenreCountRow({
+    required this.genreId,
+    required this.fallbackName,
+    required this.count,
+  });
+
+  final int genreId;
+  final String fallbackName;
+  final int count;
+}
+
 class LibraryStats {
   const LibraryStats({
     required this.counts,
     required this.watchedEpisodes,
-    required this.genres,
+    required this.estimatedWatchMinutes,
+    required this.genreRows,
     required this.releaseYears,
   });
 
@@ -26,18 +40,34 @@ class LibraryStats {
 
   final Map<(WatchStatus, MediaType), int> counts;
   final int watchedEpisodes;
-  final List<CountByLabel<String>> genres;
+  final int estimatedWatchMinutes;
+  final List<GenreCountRow> genreRows;
   final List<CountByLabel<int>> releaseYears;
+
+  List<CountByLabel<String>> get genres => genresFor(AppLanguage.tr);
+
+  /// Merges genre counts using localized canonical names so titles added under
+  /// different app languages never split into duplicate rows.
+  List<CountByLabel<String>> genresFor(AppLanguage lang) {
+    final merged = <String, int>{};
+    for (final row in genreRows) {
+      final name = localizedGenreName(row.genreId, row.fallbackName, lang);
+      merged[name] = (merged[name] ?? 0) + row.count;
+    }
+    final list = [
+      for (final e in merged.entries) CountByLabel(e.key, e.value),
+    ]..sort((a, b) {
+        final cmp = b.count.compareTo(a.count);
+        return cmp != 0 ? cmp : a.label.compareTo(b.label);
+      });
+    return list;
+  }
 
   int count(WatchStatus status, [MediaType? type]) => counts.entries
       .where((e) => e.key.$1 == status && (type == null || e.key.$2 == type))
       .fold(0, (sum, e) => sum + e.value);
 
   int get totalItems => counts.values.fold(0, (a, b) => a + b);
-
-  int get estimatedWatchMinutes =>
-      count(WatchStatus.watched, MediaType.movie) * avgMovieMinutes +
-      watchedEpisodes * avgEpisodeMinutes;
 
   String watchTimePrimaryLabelFor(AppLanguage lang) {
     final mins = estimatedWatchMinutes;
@@ -58,8 +88,8 @@ class LibraryStats {
       );
     }
     return lang.pick(
-      'Film (~115 dk) + bölüm (~42 dk) toplamı',
-      'Movies (~115m) + episodes (~42m) total',
+      'Gerçek süreler (bilinmiyorsa ~115/42 dk)',
+      'Actual runtimes (fallback ~115/42m)',
     );
   }
 }
@@ -84,6 +114,8 @@ class StatsDao {
 
   Future<LibraryStats> _compute() async {
     final watched = Variable.withString(WatchStatus.watched.name);
+    final movieType = Variable.withString(MediaType.movie.name);
+    final tvType = Variable.withString(MediaType.tv.name);
 
     final countRows = await _db
         .customSelect(
@@ -100,24 +132,45 @@ class StatsDao {
       }
     }
 
-    final episodes = await _db
-        .customSelect('SELECT COUNT(*) AS c FROM watched_episodes')
-        .getSingle();
+    final movieRuntimeRow = await _db.customSelect(
+      'SELECT COALESCE(SUM(COALESCE(runtime_minutes, ?1)), 0) AS mins '
+      'FROM library_items WHERE status = ?2 AND media_type = ?3',
+      variables: [
+        Variable.withInt(LibraryStats.avgMovieMinutes),
+        watched,
+        movieType,
+      ],
+    ).getSingle();
+
+    final episodes = await _db.customSelect(
+      'SELECT COUNT(*) AS c, '
+      'COALESCE(SUM(COALESCE(li.runtime_minutes, ?1)), 0) AS mins '
+      'FROM watched_episodes we '
+      'JOIN library_items li ON li.id = we.item_id',
+      variables: [Variable.withInt(LibraryStats.avgEpisodeMinutes)],
+    ).getSingle();
+
     final quickCompletedEpisodes = await _db.customSelect(
-      'SELECT COALESCE(SUM(ts.episode_count), 0) AS c '
+      'SELECT COALESCE(SUM(ts.episode_count), 0) AS c, '
+      'COALESCE(SUM(ts.episode_count * COALESCE(li.runtime_minutes, ?1)), 0) AS mins '
       'FROM tv_seasons ts '
       'JOIN library_items li ON li.id = ts.item_id '
-      'WHERE li.status = ? AND li.media_type = ? '
+      'WHERE li.status = ?2 AND li.media_type = ?3 '
       'AND NOT EXISTS ('
       '  SELECT 1 FROM watched_episodes we WHERE we.item_id = li.id'
       ')',
-      variables: [watched, Variable.withString(MediaType.tv.name)],
+      variables: [
+        Variable.withInt(LibraryStats.avgEpisodeMinutes),
+        watched,
+        tvType,
+      ],
     ).getSingle();
 
     final genreRows = await _db.customSelect(
-      'SELECT g.genre_name AS name, COUNT(*) AS c FROM item_genres g '
+      'SELECT g.genre_id AS gid, MAX(g.genre_name) AS name, COUNT(*) AS c '
+      'FROM item_genres g '
       'JOIN library_items li ON li.id = g.item_id WHERE li.status = ? '
-      'GROUP BY g.genre_name ORDER BY c DESC, name',
+      'GROUP BY g.genre_id',
       variables: [watched],
     ).get();
 
@@ -128,13 +181,22 @@ class StatsDao {
       variables: [watched],
     ).get();
 
+    final totalMinutes = movieRuntimeRow.read<int>('mins') +
+        episodes.read<int>('mins') +
+        quickCompletedEpisodes.read<int>('mins');
+
     return LibraryStats(
       counts: counts,
       watchedEpisodes:
           episodes.read<int>('c') + quickCompletedEpisodes.read<int>('c'),
-      genres: [
+      estimatedWatchMinutes: totalMinutes,
+      genreRows: [
         for (final r in genreRows)
-          CountByLabel(r.read<String>('name'), r.read<int>('c')),
+          GenreCountRow(
+            genreId: r.read<int>('gid'),
+            fallbackName: r.read<String>('name'),
+            count: r.read<int>('c'),
+          ),
       ],
       releaseYears: [
         for (final r in yearRows)

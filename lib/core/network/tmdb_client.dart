@@ -195,7 +195,7 @@ class TmdbClient {
     return isMovie ? 1500 : 600;
   }
 
-  static List<TmdbSearchItem> _sortByWeightedRating(List<TmdbSearchItem> items) {
+  static List<TmdbSearchItem> sortByWeightedRating(List<TmdbSearchItem> items) {
     final sorted = List<TmdbSearchItem>.of(items);
     sorted.sort((a, b) {
       final scoreCmp = (b.voteAverage ?? 0).compareTo(a.voteAverage ?? 0);
@@ -231,7 +231,11 @@ class TmdbClient {
       if (key == category?.key) continue;
       final cat = kCategoryByKey[key];
       if (cat == null) continue;
-      excludedGenres.addAll(cat.genreIdsFor(type));
+      // Language-scoped categories (e.g. Anime = ja + Animation, Korean = ko + Drama)
+      // must NOT exclude the entire parent genre globally; use keywords + client filter.
+      if (cat.includeOriginalLanguage == null) {
+        excludedGenres.addAll(cat.genreIdsFor(type));
+      }
       if (cat.tmdbKeywordId != null) {
         excludedKeywords.add(cat.tmdbKeywordId!);
       }
@@ -260,7 +264,7 @@ class TmdbClient {
     final parsed = TmdbSearchPage.fromJson(json, defaultType: type);
     final filtered = _filterExcluded(parsed.results, excludedCategoryKeys);
     return TmdbSearchPage(
-      results: sortByRating ? _sortByWeightedRating(filtered) : filtered,
+      results: sortByRating ? sortByWeightedRating(filtered) : filtered,
       page: parsed.page,
       totalPages: parsed.totalPages,
     );
@@ -304,7 +308,7 @@ class TmdbClient {
         ? pages[0].totalPages
         : pages[1].totalPages;
     return TmdbSearchPage(
-      results: sortByRating ? _sortByWeightedRating(merged) : merged,
+      results: sortByRating ? sortByWeightedRating(merged) : merged,
       page: page,
       totalPages: maxTotalPages,
     );
