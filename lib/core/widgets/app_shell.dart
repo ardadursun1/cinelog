@@ -50,12 +50,18 @@ class AppShell extends ConsumerWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          Icons.local_movies_rounded,
-                          size: 26,
-                          color: Theme.of(context).colorScheme.primary,
+                        Image.asset(
+                          'assets/images/app_icon.png',
+                          width: 34,
+                          height: 34,
+                          filterQuality: FilterQuality.medium,
+                          errorBuilder: (_, _, _) => Icon(
+                            Icons.local_movies_rounded,
+                            size: 28,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 5),
                         Text(
                           'CineLog',
                           style:

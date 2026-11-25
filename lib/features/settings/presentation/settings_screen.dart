@@ -882,12 +882,33 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   padding: const EdgeInsets.all(20),
                   child: Row(
                     children: [
-                      Icon(Icons.info_outline, color: scheme.primary),
-                      const SizedBox(width: 12),
+                      Image.asset(
+                        'assets/images/app_icon.png',
+                        width: 40,
+                        height: 40,
+                        filterQuality: FilterQuality.medium,
+                        errorBuilder: (_, _, _) =>
+                            Icon(Icons.info_outline, color: scheme.primary),
+                      ),
+                      const SizedBox(width: 14),
                       Expanded(
-                        child: SelectableText(
-                          kTmdbAttributionText,
-                          style: textTheme.bodyMedium,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'CineLog',
+                              style: textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            SelectableText(
+                              kTmdbAttributionText,
+                              style: textTheme.bodySmall?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
