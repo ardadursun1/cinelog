@@ -291,9 +291,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                         ? null
                         : () => _markNextEpisode(entry, nextEp),
                     onQuickStatus: (targetStatus) {
-                      ref
-                          .read(libraryDaoProvider)
-                          .setStatus(entry.item.id, targetStatus);
+                      toggleQuickStatusWithFeedback(
+                        context,
+                        ref,
+                        summary,
+                        targetStatus,
+                      );
                     },
                     onTap: () => showTitleDetailDialog(context, summary),
                   );

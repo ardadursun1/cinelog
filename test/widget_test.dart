@@ -10,6 +10,7 @@ import 'package:movie_tracker/features/backup/data/backup_codec.dart';
 import 'package:movie_tracker/features/backup/data/backup_service.dart';
 import 'package:movie_tracker/features/episodes/data/episode_dao.dart';
 import 'package:movie_tracker/features/library/data/library_dao.dart';
+import 'package:movie_tracker/features/library/data/library_service.dart';
 import 'package:movie_tracker/features/library/domain/library_filter.dart';
 import 'package:movie_tracker/features/library/domain/watch_status.dart';
 import 'package:movie_tracker/features/stats/data/stats_dao.dart';
@@ -231,6 +232,62 @@ void main() {
         () => BackupCodec.decode('{"app":"other"}'),
         throwsA(isA<BackupFormatException>()),
       );
+    });
+
+    test(
+        'clicking quick status button a second time removes entry and '
+        'restoreRemoved recovers rating, note, episodes, and favorite',
+        () async {
+      final service = LibraryService(db, libraryDao, episodeDao, () => null);
+      const show = TitleSummary(
+        tmdbId: 1396,
+        mediaType: MediaType.tv,
+        title: 'Breaking Bad',
+        releaseYear: 2008,
+        genres: [Genre(18, 'Dram')],
+      );
+
+      // 1st click on + (planned) -> adds to library
+      final first = await service.toggleQuickStatus(show, WatchStatus.planned);
+      expect(first.outcome, QuickStatusOutcome.added);
+
+      // Switch to watched, add rating, note, episode progress, and favorite
+      final switched =
+          await service.toggleQuickStatus(show, WatchStatus.watched);
+      expect(switched.outcome, QuickStatusOutcome.updated);
+
+      final item = (await libraryDao.findByKey(show.key))!;
+      await libraryDao.setRating(item.id, 10);
+      await libraryDao.setNote(item.id, 'Başyapıt');
+      await episodeDao.replaceSeasons(item.id, const [
+        SeasonInfo(number: 1, episodeCount: 7, name: 'Sezon 1'),
+      ]);
+      await episodeDao.markAll(item.id);
+      await settingsDao.write(
+        SettingKeys.favoriteTitles,
+        serializeFavoriteTitleKeys([show.key]),
+      );
+
+      // 2nd click on ✓ (watched) -> removes from library and clears favorite
+      final second =
+          await service.toggleQuickStatus(show, WatchStatus.watched);
+      expect(second.outcome, QuickStatusOutcome.removed);
+      expect(second.removedSnapshot, isNotNull);
+      expect(await libraryDao.findByKey(show.key), isNull);
+      final favAfterRemove =
+          await settingsDao.watch(SettingKeys.favoriteTitles).first;
+      expect(parseFavoriteTitleKeys(favAfterRemove), isEmpty);
+
+      // Undo -> restores everything losslessly
+      await service.restoreRemoved(second.removedSnapshot!);
+      final restored = (await libraryDao.watchEntries().first).single;
+      expect(restored.item.status, WatchStatus.watched);
+      expect(restored.item.userRating, 10);
+      expect(restored.item.note, 'Başyapıt');
+      expect(restored.watchedEpisodeCount, 7);
+      final favAfterRestore =
+          await settingsDao.watch(SettingKeys.favoriteTitles).first;
+      expect(parseFavoriteTitleKeys(favAfterRestore), contains(show.key));
     });
   });
 }

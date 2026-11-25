@@ -138,7 +138,7 @@ class _TitleDetailDialogState extends ConsumerState<TitleDetailDialog> {
       ),
     );
     if (confirmed == true && mounted) {
-      await ref.read(libraryDaoProvider).remove(item.id);
+      await ref.read(libraryServiceProvider).removeWithSnapshot(item.id);
       if (mounted) Navigator.of(context).pop();
     }
   }

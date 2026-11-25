@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/database/app_database.dart';
@@ -21,10 +22,63 @@ final episodeDaoProvider = Provider<EpisodeDao>((ref) => EpisodeDao(
     ));
 
 final libraryServiceProvider = Provider<LibraryService>((ref) => LibraryService(
+      ref.watch(appDatabaseProvider),
       ref.watch(libraryDaoProvider),
       ref.watch(episodeDaoProvider),
       () => ref.read(tmdbClientProvider),
     ));
+
+Future<void> toggleQuickStatusWithFeedback(
+  BuildContext context,
+  WidgetRef ref,
+  TitleSummary summary,
+  WatchStatus targetStatus,
+) async {
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  final lang = ref.read(currentLanguageProvider);
+  final service = ref.read(libraryServiceProvider);
+  final res = await service.toggleQuickStatus(summary, targetStatus);
+  if (messenger == null) return;
+
+  if (res.outcome == QuickStatusOutcome.removed &&
+      res.removedSnapshot != null) {
+    final snapshot = res.removedSnapshot!;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 3),
+          content: Text(
+            lang.pick(
+              '"${summary.title}" listeden çıkarıldı.',
+              '"${summary.title}" removed from library.',
+            ),
+          ),
+          action: SnackBarAction(
+            label: lang.pick('Geri Al', 'Undo'),
+            onPressed: () {
+              service.restoreRemoved(snapshot);
+            },
+          ),
+        ),
+      );
+  } else if (res.seasonError != null) {
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            lang.pick(
+              '"${summary.title}" eklendi ancak sezonlar alınamadı: '
+                  '${res.seasonError!.userMessageForLang(lang)}',
+              '"${summary.title}" added, but seasons could not be fetched: '
+                  '${res.seasonError!.userMessageForLang(lang)}',
+            ),
+          ),
+        ),
+      );
+  }
+}
 
 final libraryEntriesProvider = StreamProvider<List<LibraryEntry>>(
   (ref) => ref.watch(libraryDaoProvider).watchEntries(),

@@ -565,9 +565,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           summary: summary,
           status: status,
           onQuickStatus: (targetStatus) {
-            ref
-                .read(libraryServiceProvider)
-                .setOrAddStatus(summary, targetStatus);
+            toggleQuickStatusWithFeedback(context, ref, summary, targetStatus);
           },
           onTap: () => showTitleDetailDialog(context, summary),
         );

@@ -2,14 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/media_type.dart';
-import '../../../core/models/title_summary.dart';
 import '../../../core/network/tmdb_client.dart';
 import '../../../core/network/tmdb_models.dart';
 import '../../../core/network/tmdb_providers.dart';
 import '../../../core/settings/app_settings_providers.dart';
 import '../../../core/widgets/poster_card.dart';
 import '../../../core/widgets/responsive_poster_grid.dart';
-import '../../library/domain/watch_status.dart';
 import '../../library/presentation/library_providers.dart';
 import 'title_detail_dialog.dart';
 
@@ -49,56 +47,6 @@ class PersonCreditsDialog extends ConsumerStatefulWidget {
 class _PersonCreditsDialogState extends ConsumerState<PersonCreditsDialog> {
   MediaType? _mediaFilter;
   bool _bioExpanded = false;
-
-  Future<void> _setQuickStatus(
-    TitleSummary summary,
-    WatchStatus targetStatus,
-  ) async {
-    final lang = ref.read(currentLanguageProvider);
-    final dao = ref.read(libraryDaoProvider);
-    final service = ref.read(libraryServiceProvider);
-    final existing = await dao.findByKey(summary.key);
-
-    if (existing == null) {
-      final res = await service.add(summary, targetStatus);
-      if (!mounted) return;
-      final message = res.seasonError != null
-          ? lang.pick(
-              '"${summary.title}" eklendi (sezonlar alınamadı: '
-                  '${res.seasonError!.userMessageForLang(lang)}).',
-              '"${summary.title}" added (seasons unavailable: '
-                  '${res.seasonError!.userMessageForLang(lang)}).',
-            )
-          : lang.pick(
-              '"${summary.title}" → ${targetStatus.labelFor(lang)} listesine eklendi.',
-              '"${summary.title}" added to ${targetStatus.labelFor(lang)}.',
-            );
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(message),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-    } else if (existing.status != targetStatus) {
-      await dao.setStatus(existing.id, targetStatus);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(
-              lang.pick(
-                '"${summary.title}" → ${targetStatus.labelFor(lang)} olarak güncellendi.',
-                '"${summary.title}" updated to ${targetStatus.labelFor(lang)}.',
-              ),
-            ),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -277,7 +225,12 @@ class _PersonCreditsDialogState extends ConsumerState<PersonCreditsDialog> {
                         summary: summary,
                         status: statusIndex[item.key],
                         onQuickStatus: (targetStatus) =>
-                            _setQuickStatus(summary, targetStatus),
+                            toggleQuickStatusWithFeedback(
+                          context,
+                          ref,
+                          summary,
+                          targetStatus,
+                        ),
                         onTap: () => showTitleDetailDialog(context, summary),
                       );
                     },

@@ -139,10 +139,15 @@ class _PosterCardState extends ConsumerState<PosterCard> {
                             children: [
                               _QuickActionButton(
                                 icon: Icons.add_rounded,
-                                tooltip: lang.pick(
-                                  'İzlenecek listesine ekle',
-                                  'Add to Plan to Watch',
-                                ),
+                                tooltip: status == WatchStatus.planned
+                                    ? lang.pick(
+                                        'İzlenecek listesinden çıkar',
+                                        'Remove from Plan to Watch',
+                                      )
+                                    : lang.pick(
+                                        'İzlenecek listesine ekle',
+                                        'Add to Plan to Watch',
+                                      ),
                                 active: status == WatchStatus.planned,
                                 activeColor: scheme.tertiary,
                                 onPressed: () =>
@@ -151,10 +156,15 @@ class _PosterCardState extends ConsumerState<PosterCard> {
                               const SizedBox(height: 6),
                               _QuickActionButton(
                                 icon: Icons.check_rounded,
-                                tooltip: lang.pick(
-                                  'İzledim listesine ekle',
-                                  'Mark as Watched',
-                                ),
+                                tooltip: status == WatchStatus.watched
+                                    ? lang.pick(
+                                        'İzledim listesinden çıkar',
+                                        'Remove from Watched',
+                                      )
+                                    : lang.pick(
+                                        'İzledim listesine ekle',
+                                        'Mark as Watched',
+                                      ),
                                 active: status == WatchStatus.watched,
                                 activeColor: Colors.green.shade600,
                                 onPressed: () =>
